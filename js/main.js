@@ -7,7 +7,8 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 MTG.buildDB();
 
 let mode = 'local', count = 2;
-const RANDOM = '__random__';
+const RANDOM = '__random__', RANDOM1 = '__random1__';
+const isRandom = name => name === RANDOM || name === RANDOM1;
 const AI_NAMES = ['Urza', 'Mishra', 'Yawgmoth', 'Gix'];
 // seats[i] for i >= 1: {type: 'ai' | 'human' | 'online', name, deck}
 const seats = [null, { type: 'ai', name: 'Urza (AI)', deck: null }, { type: 'ai', name: 'Mishra (AI)', deck: null }, { type: 'ai', name: 'Yawgmoth (AI)', deck: null }];
@@ -16,6 +17,7 @@ function show(id) { ['#menu', '#builder', '#game'].forEach(s => $(s).classList.t
 function deckOptions(selected) {
   const all = MTG.DeckStore.all();
   return Object.keys(all).map(n => `<option value="${esc(n)}" ${n === selected ? 'selected' : ''}>${esc(n)}${MTG.DeckStore.isStarter(n) ? '' : ' (custom)'}</option>`).join('') +
+    `<option value="${RANDOM1}" ${selected === RANDOM1 ? 'selected' : ''}>Random (1 color)</option>` +
     `<option value="${RANDOM}" ${selected === RANDOM ? 'selected' : ''}>Random (2 colors)</option>`;
 }
 function fillDecks() {
@@ -50,11 +52,13 @@ function renderSeats() {
   });
 }
 function deckFor(name) {
-  if (name === RANDOM || !name) { const c = MTG.COLORS.slice().sort(() => Math.random() - .5); return MTG.randomDeck([c[0], c[1]]); }
+  const c = MTG.COLORS.slice().sort(() => Math.random() - .5);
+  if (name === RANDOM1) return MTG.randomDeck([c[0]]);
+  if (name === RANDOM || !name) return MTG.randomDeck([c[0], c[1]]);
   return MTG.DeckStore.all()[name].slice();
 }
 function checkDeck(name, who) {
-  if (name === RANDOM) return true;
+  if (isRandom(name)) return true;
   const errs = MTG.validateDeck(MTG.DeckStore.all()[name] || []);
   if (errs.length) { $('#menuNote').textContent = `${who}'s deck is not legal: ${errs[0]}`; return false; }
   return true;
@@ -130,7 +134,7 @@ $('#joinBtn').onclick = () => {
   MTG.Net.join({ code, name: $('#p1name').value || 'Guest', deck, onStatus: onlineStatus, onStart: onlineStart });
 };
 
-$('#builderBtn').onclick = () => { show('#builder'); MTG.Builder.open($('#p1deck').value !== RANDOM ? $('#p1deck').value : null); };
+$('#builderBtn').onclick = () => { show('#builder'); MTG.Builder.open(!isRandom($('#p1deck').value) ? $('#p1deck').value : null); };
 $('#builderBack').onclick = () => { show('#menu'); fillDecks(); };
 $('#menuBtn').onclick = () => {
   const g = MTG.UI.g;

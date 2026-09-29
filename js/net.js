@@ -113,18 +113,114 @@ class RemoteNetAgent {
   }
 }
 
+// ---------- relay fallback ----------
+// When a direct WebRTC connection can't be made (strict NAT, mobile/carrier networks), players talk through a
+// free public MQTT broker over secure WebSockets instead. The host listens on every broker; a guest uses the
+// first one it can reach. Topics are scoped by the room code.
+const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
+const DIRECT_TIMEOUT = 8000;
+const topicBase = code => `urzaduel/v2/${code}`;
+const rid = () => Math.random().toString(36).slice(2, 10);
+// A connection over a broker, with the same shape the rest of the code uses for PeerJS connections.
+class RelayConn {
+  constructor(client, pubTopic, from) {
+    this.client = client; this.pubTopic = pubTopic; this.from = from; this.open = true; this.seq = 0; this.handlers = {}; this.lastIn = 0; this.relay = true;
+  }
+  on(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn); }
+  emit(ev, x) { for (const fn of this.handlers[ev] || []) fn(x); }
+  send(m) { if (this.open) this.client.publish(this.pubTopic, JSON.stringify({ from: this.from, seq: ++this.seq, m }), { qos: 1 }); }
+  // messages can arrive twice with QoS 1; drop repeats
+  receive(pkt) { if (pkt.seq <= this.lastIn) return; this.lastIn = pkt.seq; this.emit('data', pkt.m); }
+  close(silent) {
+    if (!this.open) return;
+    if (!silent) try { this.client.publish(this.pubTopic, JSON.stringify({ from: this.from, bye: true }), { qos: 1 }); } catch (e) {}
+    this.open = false; this.emit('close');
+  }
+}
+function relayClient(url, opts) {
+  return window.mqtt.connect(url, Object.assign({ clientId: 'ud_' + rid(), connectTimeout: 8000, reconnectPeriod: 3000, clean: true }, opts || {}));
+}
+
 // ---------- connection ----------
 const Net = MTG.Net = {
   peer: null, role: null, local: 0, hostConn: null, seatConns: {}, plan: null,
   inbox: {}, waiters: {}, onStatus: () => {}, active: false,
   code() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 6; i++) s += a[Math.floor(Math.random() * a.length)]; return s; },
-  available() { return typeof window.Peer === 'function'; },
+  available() { return typeof window.Peer === 'function' || typeof window.mqtt === 'object'; },
   get conn() { return this.role === 'host' ? Object.values(this.seatConns)[0] || null : this.hostConn; },
   reset() {
     for (const c of Object.values(this.seatConns)) try { c.close(); } catch (e) {}
     try { if (this.hostConn) this.hostConn.close(); } catch (e) {}
     try { if (this.peer) this.peer.destroy(); } catch (e) {}
-    this.peer = null; this.hostConn = null; this.seatConns = {}; this.active = false; this.inbox = {}; this.waiters = {};
+    for (const c of this.relayClients || []) try { c.end(true); } catch (e) {}
+    clearTimeout(this._directTimer);
+    this.peer = null; this.hostConn = null; this.seatConns = {}; this.active = false; this.inbox = {}; this.waiters = {}; this.relayClients = [];
+  },
+  // A new guest link (direct or relay) on the host
+  acceptConn(conn) {
+    conn.on('data', m => this.onHostData(conn, m));
+    conn.on('close', () => this.onGuestClose(conn));
+  },
+  // Host: also listen on every relay broker, so guests whose direct connection fails can still join
+  hostRelay(code) {
+    if (typeof window.mqtt !== 'object') return;
+    const base = topicBase(code);
+    for (const url of BROKERS) {
+      const client = relayClient(url, { will: { topic: `${base}/hostbye`, payload: 'bye', qos: 1 } });
+      this.relayClients.push(client);
+      const links = {};
+      client.on('connect', () => { client.subscribe(`${base}/h`, { qos: 1 }); if (!this.peerOpen) this.lobbyStatus(); });
+      client.on('message', (topic, buf) => {
+        let pkt; try { pkt = JSON.parse(buf.toString()); } catch (e) { return; }
+        if (!pkt || !pkt.from) return;
+        let conn = links[pkt.from];
+        if (pkt.bye) { if (conn) conn.close(true); return; }
+        if (!conn) {
+          if (!pkt.m || pkt.m.t !== 'hello') return;
+          conn = links[pkt.from] = new RelayConn(client, `${base}/g/${pkt.from}`, 'host');
+          this.acceptConn(conn);
+        }
+        conn.receive(pkt);
+      });
+    }
+  },
+  // Guest: connect through the first relay broker that answers
+  joinRelay(code) {
+    if (this.hostConn && this.hostConn.open) return;
+    if (typeof window.mqtt !== 'object') return this.onStatus('Could not connect directly, and the relay library is missing.');
+    this.onStatus('A direct connection isn\'t possible on this network — connecting through a relay…');
+    const base = topicBase(code), gid = rid();
+    const tryBroker = i => {
+      if (i >= BROKERS.length) return this.onStatus('Could not reach the room. Check the code, and that the host still has the room open.');
+      const client = relayClient(BROKERS[i], { reconnectPeriod: 0, will: { topic: `${base}/h`, payload: JSON.stringify({ from: gid, bye: true }), qos: 1 } });
+      this.relayClients.push(client);
+      let settled = false;
+      client.on('error', () => { if (!settled) { settled = true; try { client.end(true); } catch (e) {} tryBroker(i + 1); } });
+      client.on('connect', () => {
+        if (settled) return; settled = true;
+        client.options.reconnectPeriod = 3000;
+        const conn = new RelayConn(client, `${base}/h`, gid);
+        client.subscribe([`${base}/g/${gid}`, `${base}/hostbye`], { qos: 1 }, () => {
+          this.useHostConn(conn);
+          conn.send({ t: 'hello', v: PROTOCOL, name: this.opts.name, deck: this.opts.deck });
+          // no answer from the host at all: the room doesn't exist (or the host left)
+          this._helloTimer = setTimeout(() => { if (!this.gotLobby) this.onStatus('No reply from that room. Check the code, and that the host still has the room open.'); }, 12000);
+        });
+        client.on('message', (topic, buf) => {
+          if (topic.endsWith('/hostbye')) { conn.close(true); return; }
+          let pkt; try { pkt = JSON.parse(buf.toString()); } catch (e) { return; }
+          if (pkt && pkt.bye) { conn.close(true); return; }
+          if (pkt) conn.receive(pkt);
+        });
+      });
+      setTimeout(() => { if (!settled) { settled = true; try { client.end(true); } catch (e) {} tryBroker(i + 1); } }, 9000);
+    };
+    tryBroker(0);
+  },
+  useHostConn(conn) {
+    this.hostConn = conn;
+    conn.on('data', m => this.onGuestData(m));
+    conn.on('close', () => { if (this.hostConn === conn) this.onHostClose(); });
   },
   // host: to every guest (optionally skipping one); guest: to the host
   send(msg, except) {
@@ -159,14 +255,14 @@ const Net = MTG.Net = {
     this.reset(); this.role = 'host'; this.local = 0; this.onStatus = opts.onStatus; this.opts = opts;
     this.plan = opts.plan.map(s => Object.assign({}, s));
     const code = this.code();
-    this.roomCode = code;
-    this.peer = new window.Peer(ID_PREFIX + code, { debug: 1 });
-    this.peer.on('open', () => this.lobbyStatus());
-    this.peer.on('error', e => this.onStatus('Connection error: ' + (e.type || e.message)));
-    this.peer.on('connection', conn => {
-      conn.on('data', m => this.onHostData(conn, m));
-      conn.on('close', () => this.onGuestClose(conn));
-    });
+    this.roomCode = code; this.peerOpen = false;
+    if (typeof window.Peer === 'function') {
+      this.peer = new window.Peer(ID_PREFIX + code, { debug: 1 });
+      this.peer.on('open', () => { this.peerOpen = true; this.lobbyStatus(); });
+      this.peer.on('error', e => console.warn('PeerJS:', e.type || e.message)); // guests can still come in through the relay
+      this.peer.on('connection', conn => this.acceptConn(conn));
+    }
+    this.hostRelay(code);
   },
   openSeats() { return this.plan.map((s, i) => i).filter(i => this.plan[i].type === 'online' && !this.seatConns[i]); },
   lobbyStatus() {
@@ -218,22 +314,31 @@ const Net = MTG.Net = {
   join(opts) {
     this.reset(); this.role = 'guest'; this.onStatus = opts.onStatus; this.opts = opts;
     const code = (opts.code || '').trim().toUpperCase();
+    this.gotLobby = false;
+    this.onStatus('Connecting to room ' + code + '…');
+    // try a direct connection first; if it hasn't opened in a few seconds, fall back to the relay
+    this._directTimer = setTimeout(() => this.joinRelay(code), DIRECT_TIMEOUT);
+    // ?relay=1 in the address skips the direct attempt (useful on networks known to block it, and for testing)
+    const forceRelay = typeof location !== 'undefined' && /[?&]relay=1\b/.test(location.search);
+    if (typeof window.Peer !== 'function' || forceRelay) { clearTimeout(this._directTimer); return this.joinRelay(code); }
     this.peer = new window.Peer({ debug: 1 });
-    this.peer.on('error', e => this.onStatus('Connection error: ' + (e.type === 'peer-unavailable' ? 'no room with that code' : (e.type || e.message))));
+    this.peer.on('error', e => { console.warn('PeerJS:', e.type || e.message); clearTimeout(this._directTimer); this.joinRelay(code); });
     this.peer.on('open', () => {
-      this.onStatus('Connecting to room ' + code + '…');
       const conn = this.peer.connect(ID_PREFIX + code, { reliable: true });
-      this.hostConn = conn;
-      conn.on('open', () => { this.onStatus('Connected. Waiting for the host…'); conn.send({ t: 'hello', v: PROTOCOL, name: opts.name, deck: opts.deck }); });
-      conn.on('data', m => this.onGuestData(m));
-      conn.on('close', () => this.onHostClose());
+      conn.on('open', () => {
+        if (this.hostConn && this.hostConn.open) { conn.close(); return; } // relay already in use
+        clearTimeout(this._directTimer);
+        this.useHostConn(conn);
+        conn.send({ t: 'hello', v: PROTOCOL, name: opts.name, deck: opts.deck });
+      });
     });
   },
   onGuestData(m) {
     if (!m || !m.t) return;
     if (m.t === 'full') return this.onStatus('That room is already full.');
-    if (m.t === 'error' || m.t === 'lobby') return this.onStatus(m.msg);
-    if (m.t === 'start') { this.local = m.seat; return this.startGame(m.cfg); }
+    if (m.t === 'lobby') { this.gotLobby = true; clearTimeout(this._helloTimer); return this.onStatus(m.msg + (this.hostConn && this.hostConn.relay ? ' (via relay)' : '')); }
+    if (m.t === 'error') return this.onStatus(m.msg);
+    if (m.t === 'start') { this.gotLobby = true; clearTimeout(this._helloTimer); this.local = m.seat; return this.startGame(m.cfg); }
     if (m.t === 'd') return this.deliver(m);
   },
   onHostClose() {

@@ -33,13 +33,15 @@ In a 3–4 player game:
 3. Each other player picks **Online**, enters their name and deck, types the code and clicks **Join**. The lobby shows who has joined; the game starts when every online seat is filled.
 
 How it works:
-- Browsers connect peer-to-peer (WebRTC, via the free PeerJS service). The host connects to up to three guests, relays moves between them, and runs any computer players.
+- Browsers first try to connect directly (WebRTC, via the free PeerJS service). If that hasn't worked within about 8 seconds, as happens on many mobile, carrier and home networks, they automatically switch to a free public relay (MQTT over secure WebSockets: EMQX, HiveMQ or Mosquitto's public brokers). No account is needed. In relay mode, moves pass through that public server, addressed by the room code.
+- Adding `?relay=1` to the address makes a joining player skip the direct attempt.
+- The host connects to up to three guests, relays moves between them, and runs any computer players.
 - Every browser runs the same game engine from a shared random seed, and only players' decisions travel over the connection. You only see your own hand.
 - Every move carries a check of the game state. If the copies ever disagree, the game stops with a message instead of carrying on wrongly.
 - Conceding counts as that player's next decision, so every browser applies it at the same moment. A player who disconnects concedes the same way.
 - After a game the host can start a rematch.
 
-Online play needs internet. A few strict networks (some corporate or campus ones) block direct browser connections; if joining fails, try another network, such as a phone hotspot. Each browser holds the whole game in memory, so hidden hands rely on players being honest.
+Online play needs internet. If even the relay can't be reached (some locked-down work or school networks block it), try another network, such as a phone hotspot. Each browser holds the whole game in memory, so hidden hands rely on players being honest.
 
 ## What's in it
 

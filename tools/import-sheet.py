@@ -10,6 +10,7 @@ BASIC = {'blue': 'Island', 'green': 'Forest', 'white': 'Plains', 'red': 'Mountai
 # changes requested on top of the spreadsheet (the basic land count is rebalanced to 60 afterwards)
 ADJUST = {
     'green': {'Thorn Elemental': +1},
+    'blue': {'Palinchron': +1, 'Archivist': +1, 'Somnophore': +1, 'Mind Over Matter': +1},
 }
 # spreadsheet spellings -> Oracle names
 ALIASES = {

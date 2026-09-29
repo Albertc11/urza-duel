@@ -197,6 +197,8 @@ class AIAgent {
       if (d.name === 'Covetous Dragon' && !g.perms(p, o => g.is(o, 'Artifact')).length) return null;
       if (d.name === 'Tethered Griffin' && !g.perms(p, o => g.is(o, 'Enchantment')).length) return null;
       if (d.name === 'Emperor Crocodile' && !g.creatures(p).length) return null;
+      // legend rule: a second copy of a legend we already control would just be put into the graveyard
+      if (d.supertypes.includes('Legendary') && g.perms(p, o => o.def.name === d.name).length) return null;
       // "When this enters, sacrifice a creature": only worth it with a cheaper creature to feed it,
       // otherwise the creature has to sacrifice itself
       if (im.etbSacrifice) {
@@ -500,6 +502,8 @@ class AIAgent {
       }
       if (ai.counterFriendly && when === 'eot') { const t = this.best(g.creatures(p), o => this.value(g, o)); if (t) { this.intent = [t]; return a; } }
       if (ai.growCounter && when === 'eot') return a;
+      // X-cost creature search (Citanul Flute): with the opponent's turn ending, spend spare mana on the best creature X can reach
+      if (ai.creatureTutor && when === 'eot' && g.players[p].library.some(c => c.def.types.includes('Creature') && c.def.cmc >= 2 && c.def.cmc <= this.spareMana(g, p))) return a;
       if (ai.regrow && when === 'eot' && g.players[p].life > 8) { const t = this.best(g.players[p].graveyard.filter(c => c.def.types.includes('Creature')), c => this.cardValue(g, c)); if (t) { this.intent = [t]; return a; } }
       if ((ai.sneak || ai.piper) && when === 'main' && g.step === 'main1') return a;
       if (ai.bargain && when === 'main' && g.players[p].life > 8 && g.players[p].hand.length < 4) return a;

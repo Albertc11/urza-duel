@@ -375,7 +375,7 @@ const UI = MTG.UI = {
       else if (r.type === 'color') buttons = MTG.COLORS.map(c => `<button data-color="${c}"><span class="pip ${c}">${c}</span> ${MTG.COLOR_NAME[c]}</button>`).join('');
       else if (r.type === 'attackers') {
         const multi = (r.defenders || []).length > 1;
-        prompt += multi ? ` <small>Attacking <b>${esc(g.pname(pend.curTarget))}</b> — click another player's portrait to change target, then click creatures. ${pend.sel.length} selected.</small>`
+        prompt += multi ? ` <small>Click creatures, and a player's portrait to choose whom they attack (now: <b>${esc(g.pname(pend.curTarget))}</b>). ${pend.sel.length} selected.</small>`
           : ` <small>Click creatures to toggle. ${pend.sel.length} selected.</small>`;
         buttons = `<button class="primary" data-act="attack">${pend.sel.length ? 'Attack' : 'No attack'}</button><button data-act="allattack">All${multi ? ' → ' + esc(g.pname(pend.curTarget)) : ''}</button><button data-act="clear">Clear</button>`;
       }
@@ -466,14 +466,18 @@ const UI = MTG.UI = {
       }
       case 'attack': return this.submit((pend.req.defenders || []).length > 1 ? new Map(pend.sel.map(o => [o, pend.attackTo.get(o)])) : pend.sel.slice());
       case 'allattack': pend.sel = pend.req.candidates.slice(); pend.sel.forEach(o => pend.attackTo.set(o, pend.curTarget)); return this.render();
-      case 'clear': pend.sel = []; if (pend.attackTo) pend.attackTo.clear(); pend.blocks = new Map(); pend.pickBlocker = null; return this.render();
+      case 'clear': pend.sel = []; pend.aimed = false; if (pend.attackTo) pend.attackTo.clear(); pend.blocks = new Map(); pend.pickBlocker = null; return this.render();
       case 'block': return this.submit(pend.blocks);
       case 'reopen': return this.openChoiceModal();
     }
   },
   clickPlayer(p) {
     const pend = this.pending;
-    if (pend && pend.kind === 'choice' && pend.req.type === 'attackers' && (pend.req.defenders || []).includes(p)) { pend.curTarget = p; return this.render(); }
+    if (pend && pend.kind === 'choice' && pend.req.type === 'attackers' && (pend.req.defenders || []).includes(p)) {
+      // the first portrait click also aims creatures already picked (pick creatures, then whom); later ones aim the next picks
+      if (!pend.aimed) { pend.aimed = true; pend.sel.forEach(o => pend.attackTo.set(o, p)); }
+      pend.curTarget = p; return this.render();
+    }
     if (pend && pend.kind === 'choice' && pend.req.type === 'target') {
       const t = pend.req.candidates.find(c => c.player === p);
       if (t) this.submit(t);

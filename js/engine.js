@@ -1210,7 +1210,8 @@ class Game {
     const item = { kind: 'ability', id: this.nextId++, source: cost.sacSelf ? ctx.sacrificedSelf : o, controller: p, def: ab, ctx,
       text: ab.text || (o.def.name + ' ability') };
     this.pushStack(item);
-    this.say(`${this.pname(p)} activates ${o.def.name}: ${item.text}${this.describeTargets(ctx)}.`);
+    const xNote = cost.mana && /X/.test(cost.mana) ? ` (X=${ctx.x})` : '';
+    this.say(`${this.pname(p)} activates ${o.def.name}${xNote}: ${item.text}${this.describeTargets(ctx)}.`);
     this.emit('activated', { item, player: p });
     this.emitTargeted(ctx);
     return true;
@@ -1349,6 +1350,7 @@ class Game {
         for (const o of legends) (byName[o.def.name] = byName[o.def.name] || []).push(o);
         for (const name in byName) if (byName[name].length > 1) {
           const keep = await this.choosePerm(p, byName[name], `Legend rule: choose the ${name} to keep`, 'legend', false);
+          this.say(`Legend rule: ${this.pname(p)} controls more than one ${name}, so keeps one and the rest go to the graveyard.`);
           for (const o of byName[name]) if (o !== keep) toGY.push(o);
         }
       }

@@ -126,10 +126,8 @@ MTG.buildDB = function () {
     if (MTG.DB[raw.name]) continue;
     MTG.DB[raw.name] = buildDef(raw);
   }
-  // prefer locally downloaded images (tools/fetch-images.js) so the game works offline.
-  // The published web version doesn't ship the images folder, so it loads art from Scryfall instead.
-  const hosted = typeof location !== 'undefined' && /github\.io$/.test(location.hostname);
-  const local = hosted ? {} : (window.CARD_IMAGES || {});
+  // prefer the bundled images (tools/fetch-images.js) so the game works offline and doesn't depend on Scryfall
+  const local = window.CARD_IMAGES || {};
   for (const name in local) {
     const d = MTG.DB[name]; if (!d) continue;
     if (local[name].img) d.img = local[name].img;

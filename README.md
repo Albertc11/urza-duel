@@ -111,8 +111,8 @@ It prints every adjustment it made.
 
 The game is a static site, hosted on GitHub Pages. To publish changes, commit and push to the `main` branch; Pages redeploys in a minute or two.
 
-- The `images/` folder and `magic.xlsx` are kept out of the repository (`.gitignore`). The web version loads card art from Scryfall.
-- A local copy uses the downloaded images, so it still works offline against the computer or hotseat.
+- Card images are included in the repository (`images/`), so the site doesn't depend on Scryfall.
+- `magic.xlsx` is kept out of the repository (`.gitignore`); the decks from it are built into `js/sheetdecks.js`.
 
 ## Refreshing card data
 

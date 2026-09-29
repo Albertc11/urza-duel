@@ -1,5 +1,4 @@
-# local-only: downloaded card images (the web version uses Scryfall) and the source spreadsheet
-images/
+# local-only: the source spreadsheet (the decks are built into js/sheetdecks.js)
 magic.xlsx
 ~$*.xlsx
 .claude/

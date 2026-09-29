@@ -95,7 +95,7 @@ $('#menuBtn').onclick = () => {
 $('#concedeBtn').onclick = () => MTG.UI.concede();
 $('#fullControl').onchange = e => { MTG.UI.settings.fullControl = e.target.checked; };
 const supported = Object.values(MTG.DB).filter(d => d.supported).length;
-$('#menuNote').textContent = `${supported} of ${Object.keys(MTG.DB).length} Urza block cards are playable. Card images load from Scryfall.`;
+$('#menuNote').textContent = `${supported} cards playable: the Urza block plus the extra cards from your spreadsheet decks.`;
 fillDecks();
 setMode('ai');
 })();

@@ -495,8 +495,11 @@ const UI = MTG.UI = {
         if (fix) return this.popup(ev, [{ label: `${why.blocker.def.name}: sacrifice a permanent to ignore it this turn`, fn: () => this.submit(fix) }], why.reason);
         return this.toast(why.reason);
       }
-      if (acts.length === 1 && acts[0].type !== 'activate') return this.submit(acts[0]);
-      this.popup(ev, acts.map(a => ({ label: this.actLabel(a), fn: () => this.submit(a) })));
+      // never cycle on a single click: cycling discards the card, so it's always an explicit menu choice
+      if (acts.length === 1 && acts[0].type !== 'activate' && acts[0].type !== 'cycle') return this.submit(acts[0]);
+      // a card in hand that can only be cycled right now: say why it can't be cast
+      const castNote = o.zone === 'hand' && !acts.some(a => a.type === 'cast' || a.type === 'land') ? g.whyNotPlayable(pend.p, o).reason : undefined;
+      this.popup(ev, acts.map(a => ({ label: this.actLabel(a), fn: () => this.submit(a) })), castNote);
       return;
     }
     const r = pend.req;

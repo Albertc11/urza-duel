@@ -184,6 +184,49 @@ test('AI only casts Commander Greven when it has a cheaper creature to sacrifice
   assert(g.battlefield.some(o => o.def.name === 'Commander Greven il-Vec'), 'Greven stays');
   assert(!g.battlefield.some(o => o.def.name === 'Plague Beetle'), 'the Beetle was sacrificed');
 });
+test('Lifeline returns any creature that dies, including an opponent\'s, under its owner\'s control', async () => {
+  const g = setup(); put(g, 0, 'Lifeline'); put(g, 0, 'Goblin Patrol'); const theirs = put(g, 1, 'Pegasus Charger');
+  g.destroy(theirs); await resolveAll(g);
+  assert(g.players[1].graveyard.some(c => c.def.name === 'Pegasus Charger'), 'the opponent\'s creature died');
+  g.emit('endStep', { player: 0 }); await resolveAll(g);
+  const back = g.battlefield.find(o => o.def.name === 'Pegasus Charger');
+  assert(back, 'the opponent\'s creature returns at the next end step');
+  assert(g.ctrl(back) === 1, 'it returns under its owner\'s control, not Lifeline\'s controller');
+});
+test('Metrognome discarded by an opponent\'s spell gives its owner four Gnomes; discarding it yourself gives none', async () => {
+  const g = setup([{ cards: (g, req) => req.cards ? req.cards.filter(c => c.def.name === 'Metrognome').slice(0, 1) : undefined }, {}]);
+  lands(g, 0, 'Swamp', 1); hand(g, 1, 'Metrognome');
+  const duress = hand(g, 0, 'Duress'); await g.castSpell(0, duress, { targets: [{ player: 1 }] }); await resolveAll(g);
+  assert(g.players[1].graveyard.some(c => c.def.name === 'Metrognome'), 'Duress took Metrognome');
+  const gnomes = p => g.battlefield.filter(o => o.def.name === 'Gnome' && g.ctrl(o) === p).length;
+  assert(gnomes(1) === 4, 'Metrognome\'s owner gets four Gnomes, got ' + gnomes(1));
+  const mine = hand(g, 0, 'Metrognome'); await g.discard(0, mine); await resolveAll(g);
+  assert(gnomes(0) === 0, 'discarding your own Metrognome (not caused by an opponent) gives nothing');
+});
+test('Multiplayer AI does not counter a removal spell aimed at a third player, but does when it is the target', async () => {
+  const lib = Array(30).fill('Island');
+  const mk = () => {
+    const g = new M.Game({ seed: 7, players: ['A', 'B', 'C'].map(n => ({ name: n, deck: lib.slice(), agent: new Scripted({}) })) });
+    g.turn = 3; g.active = 0; g.step = 'main1'; g.players.forEach(p => { p.lastTurnStart = 3; });
+    lands(g, 0, 'Swamp', 2); lands(g, 1, 'Island', 2); hand(g, 1, 'Counterspell');
+    return g;
+  };
+  for (const [victim, shouldCounter] of [[2, false], [1, true]]) {
+    const g = mk(); const target = put(g, victim, 'Pegasus Charger');
+    const terror = hand(g, 0, 'Terror'); await g.castSpell(0, terror, { targets: [target] });
+    const top = g.stack[g.stack.length - 1];
+    const ai = new M.AIAgent(); ai._g = g;
+    const a = ai.respond(g, 1, g.legalActions(1), top);
+    const countered = !!(a && a.card && a.card.def.name === 'Counterspell');
+    assert(countered === shouldCounter, `Terror on player ${victim + 1}'s creature: B ${countered ? 'countered' : 'let it resolve'}, expected ${shouldCounter ? 'counter' : 'no counter'}`);
+  }
+});
+test('Lifeline does nothing if no other creature is on the battlefield', async () => {
+  const g = setup(); put(g, 0, 'Lifeline'); const only = put(g, 1, 'Pegasus Charger');
+  g.destroy(only); await resolveAll(g);
+  g.emit('endStep', { player: 0 }); await resolveAll(g);
+  assert(!g.battlefield.some(o => o.def.name === 'Pegasus Charger'), 'with no other creature around, it stays dead');
+});
 
 (async () => {
   let pass = 0;

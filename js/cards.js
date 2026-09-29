@@ -142,7 +142,7 @@ I['Silent Attendant'] = { abilities: [{ tap: true, text: 'Gain 1 life', ai: { eo
 I['Braidwood Cup'] = { abilities: [{ tap: true, text: 'Gain 1 life', ai: { eot: true }, resolve: (g, ctx) => g.gainLife(ctx.controller, 1) }] };
 I['Sanctum Custodian'] = { abilities: [{ tap: true, text: 'Prevent the next 2 damage to any target', targets: [T.any({ harm: false })], ai: { prevent: 2 }, resolve: (g, ctx) => g.addShield(t0(ctx), 2) }] };
 I['Master Healer'] = { abilities: [{ tap: true, text: 'Prevent the next 4 damage to any target', targets: [T.any({ harm: false })], ai: { prevent: 4 }, resolve: (g, ctx) => g.addShield(t0(ctx), 4) }] };
-I['Seasoned Marshal'] = { triggers: [attacks({ optional: true, optionalPrompt: 'Tap target creature', text: 'tap target creature', targets: [T.creature({ filter: (g, o, ctx) => g.ctrl(o) !== ctx.controller })], resolve: (g, ctx) => t0(ctx) && g.tap(t0(ctx)) })] };
+I['Seasoned Marshal'] = { triggers: [attacks({ optional: true, optionalPrompt: 'Tap target creature', text: 'tap target creature', targets: [T.creature()], resolve: (g, ctx) => t0(ctx) && g.tap(t0(ctx)) })] };
 I['Sustainer of the Realm'] = { triggers: [blocks({ text: '+0/+2', resolve: (g, ctx) => g.alive(src(ctx)) && g.pump(src(ctx), 0, 2) })] };
 I['Serra Advocate'] = { abilities: [{ tap: true, text: 'Target attacking or blocking creature gets +2/+2', targets: [T.combatCreature({ harm: false })], ai: { pumpCombat: 2 }, resolve: (g, ctx) => g.pump(t0(ctx), 2, 2) }] };
 I['Angelic Page'] = { abilities: [{ tap: true, text: 'Target attacking or blocking creature gets +1/+1', targets: [T.combatCreature({ harm: false })], ai: { pumpCombat: 1 }, resolve: (g, ctx) => g.pump(t0(ctx), 1, 1) }] };
@@ -579,7 +579,10 @@ I['Crystal Chimes'] = { abilities: [{ tap: true, cost: { mana: '{3}', sacSelf: t
 I['Lotus Blossom'] = { triggers: [myUpkeep({ optional: true, optionalPrompt: 'Put a petal counter on Lotus Blossom', text: 'petal counter', resolve: (g, ctx) => g.alive(src(ctx)) && g.addCounters(src(ctx), 'petal', 1) })],
   manaAbilities: [{ tap: true, auto: false, cost: { sacSelf: true }, label: 'Sacrifice: add X mana of one color', options: () => [], produce: async (g, o, p) => {
     const n = o.counters.petal || 0; const col = await g.chooseColor(p, `Add ${n} mana of which color?`); g.addMana(p, mana({ [col]: n })); } }] };
-I['Metrognome'] = { abilities: [{ tap: true, cost: { mana: '{4}' }, text: 'Create a 1/1 Gnome artifact creature token', ai: { eot: true }, resolve: (g, ctx) => g.createToken(ctx.controller, { name: 'Gnome', subtypes: ['Gnome'], types: ['Artifact', 'Creature'], power: 1, toughness: 1 }) }] };
+I['Metrognome'] = {
+  triggers: [{ on: 'discarded', fromAnywhere: true, when: (g, s, ev) => ev.obj === s && ev.by != null && ev.by !== ev.player, text: 'create four 1/1 Gnome artifact creature tokens',
+    resolve: (g, ctx) => { for (let i = 0; i < 4; i++) g.createToken(ctx.controller, { name: 'Gnome', subtypes: ['Gnome'], types: ['Artifact', 'Creature'], power: 1, toughness: 1 }); } }],
+  abilities: [{ tap: true, cost: { mana: '{4}' }, text: 'Create a 1/1 Gnome artifact creature token', ai: { eot: true }, resolve: (g, ctx) => g.createToken(ctx.controller, { name: 'Gnome', subtypes: ['Gnome'], types: ['Artifact', 'Creature'], power: 1, toughness: 1 }) }] };
 I['Phyrexian Processor'] = {
   spell: { resolve: async (g, ctx) => {
     const life = g.players[ctx.controller].life;

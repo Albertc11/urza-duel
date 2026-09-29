@@ -109,6 +109,7 @@ node tools/sim.js 50
 - `locksteptest.js` plays games between engines joined like an online match and checks they stay identical. Use `PLAYERS=3` or `PLAYERS=4` for multiplayer; `BREAK=1` checks that a mismatch is caught.
 - `sim.js` also takes `PLAYERS=3`/`PLAYERS=4`, and `DECKS=regex` to use saved decks.
 - `tournament.js` runs a round-robin between saved decks.
+- `invariants.js [games] [seed]` plays AI games and, whenever a player gets priority, checks rules invariants: no card lost or duplicated, no object in two zones, no creature surviving lethal damage or 0 toughness, no player left at 0 life, no illegal Aura, no duplicate legend. It also lists cards the AI never used. Takes `PLAYERS=`, `DECKS=`, `UNUSED=1` (print the list), `ONLY=n` (replay one game) and `TIMEOUT=ms`.
 
 ## Your spreadsheet decks
 

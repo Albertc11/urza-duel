@@ -360,7 +360,16 @@ class AIAgent {
   respond(g, p, acts, top) {
     const opp = this.oppOf(p);
     const targetsMine = [].concat(...top.ctx.targets.map(t => Array.isArray(t) ? t : [t])).filter(t => t && t.zone === 'battlefield' && g.ctrl(t) === p);
-    const worth = top.kind === 'spell' ? (top.card.def.cmc >= 3 || targetsMine.length > 0 || (top.card.def.impl && ['wrath', 'removal', 'burn', 'discard'].includes(top.card.def.impl.ai))) : false;
+    let worth = top.kind === 'spell' ? (top.card.def.cmc >= 3 || targetsMine.length > 0 || (top.card.def.impl && ['wrath', 'removal', 'burn', 'discard'].includes(top.card.def.impl.ai))) : false;
+    // multiplayer: a harmful spell aimed only at a third player (or their permanents) helps us, so let it resolve
+    if (worth && top.kind === 'spell') {
+      const im = top.card.def.impl || {};
+      const specs = (im.spell && im.spell.targets) || [];
+      const harmful = specs.some(s => s.harm) || ['removal', 'burn', 'discard', 'edict'].includes(im.ai);
+      const whose = t => t.player != null ? t.player : (t.zone === 'battlefield' ? g.ctrl(t) : null);
+      const hit = [].concat(...top.ctx.targets.map(t => Array.isArray(t) ? t : [t])).filter(Boolean).map(whose).filter(q => q != null);
+      if (harmful && hit.length && hit.every(q => q !== p && q !== top.controller)) worth = false;
+    }
     // counterspells
     if (top.kind === 'spell' && worth) {
       for (const a of acts.filter(a => a.type === 'cast' && ['counter', 'soft2', 'softX'].includes((a.card.def.impl || {}).ai))) {

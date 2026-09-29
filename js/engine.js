@@ -459,7 +459,9 @@ class Game {
     const pl = this.players[p];
     if (!pl.hand.includes(card)) return;
     this.say(`${pl.name} discards ${card.def.name}.`);
-    this.moveTo(card, 'graveyard');
+    const n = this.moveTo(card, 'graveyard');
+    // by: controller of the spell or ability that caused it (null for costs, cleanup, etc.) — for Metrognome
+    if (n) this.emit('discarded', { obj: n, player: p, by: this.resolvingController != null ? this.resolvingController : null });
   }
   async chooseDiscard(p, n, opt = {}) {
     const hand = this.players[p].hand;
@@ -1222,6 +1224,11 @@ class Game {
     const item = this.stack.pop();
     if (!item) return;
     this.bump();
+    const prevController = this.resolvingController;
+    this.resolvingController = item.controller;
+    try { await this.resolveItem(item); } finally { this.resolvingController = prevController; }
+  }
+  async resolveItem(item) {
     const ctx = item.ctx;
     if (item.kind === 'spell') {
       const card = item.card;

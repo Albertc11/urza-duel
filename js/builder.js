@@ -169,7 +169,7 @@ const B = MTG.Builder = {
     m.querySelector('[data-m=copy]').onclick = () => { const t = m.querySelector('#exp'); t.select(); try { navigator.clipboard.writeText(t.value); } catch (e) { document.execCommand('copy'); } this.flash('Copied'); };
   },
   importDeck() {
-    const m = MTG.UI.modal(`<h2>Import deck</h2><div class="menu-note" style="text-align:left">One card per line, e.g. <code>4 Goblin Patrol</code>. Only Urza block cards are recognised.</div><textarea id="imp" rows="16" style="width:100%"></textarea><div class="foot"><button data-m="cancel">Cancel</button><button class="primary" data-m="ok">Import</button></div>`);
+    const m = MTG.UI.modal(`<h2>Import deck</h2><div class="menu-note" style="text-align:left">One card per line, e.g. <code>4 Goblin Patrol</code>. Urza block cards and the extra cards from the spreadsheet decks are recognised.</div><textarea id="imp" rows="16" style="width:100%"></textarea><div class="foot"><button data-m="cancel">Cancel</button><button class="primary" data-m="ok">Import</button></div>`);
     m.querySelector('[data-m=cancel]').onclick = () => MTG.UI.closeModal();
     m.querySelector('[data-m=ok]').onclick = () => {
       const cards = [], bad = [];

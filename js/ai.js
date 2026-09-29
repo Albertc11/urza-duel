@@ -17,7 +17,15 @@ class AIAgent {
     if (kw.has('defender')) v -= ch.power * 1.2;
     if ((o.def.impl || {}).abilities) v += 1.5;
     if (o.isToken) v -= 0.5;
+    // already neutralised (e.g. Pacifism): not worth more removal or another Aura
+    if (ch.flags.has('cantAttack') && ch.flags.has('cantBlock')) v *= 0.2;
     return v;
+  }
+  // true if an Aura named `name` is already on `o`, or a spell/ability on the stack already targets it with that card
+  alreadyAffected(g, o, name) {
+    if (g.aurasOn(o).some(a => a.def.name === name)) return true;
+    return g.stack.some(s => (s.kind === 'spell' ? s.card.def.name : s.source && s.source.def.name) === name &&
+      [].concat(...s.ctx.targets.map(t => Array.isArray(t) ? t : [t])).includes(o));
   }
   cardValue(g, c) {
     const d = c.def;
@@ -29,7 +37,16 @@ class AIAgent {
   }
   remaining(g, o) { return g.tough(o) - o.damage; }
   best(list, f) { let b = null, bv = -Infinity; for (const x of list) { const v = f(x); if (v > bv) { bv = v; b = x; } } return b; }
-  oppOf(p) { return 1 - p; }
+  // The opponent the AI focuses on: the only one in a 2-player game, otherwise the one with the lowest life.
+  oppOf(p) {
+    const g = this._g;
+    if (!g) return 1 - p;
+    const os = g.opps(p);
+    if (os.length <= 1) return os[0] != null ? os[0] : 1 - p;
+    return os.slice().sort((a, b) => g.players[a].life - g.players[b].life)[0];
+  }
+  // board value summed over every opponent (for wraths and sweepers)
+  oppsSum(g, p, f) { return g.opps(p).reduce((s, q) => s + f(q), 0); }
   landsInPlay(g, p) { return g.perms(p, o => g.is(o, 'Land')).length; }
   spareMana(g, p) { // rough count of untapped mana sources
     return g.autoSources(p).reduce((s, x) => s + Math.max(...x.options.map(m => Object.values(m).reduce((a, b) => a + b, 0))), 0) + Object.values(g.players[p].pool).reduce((a, b) => a + b, 0);
@@ -37,6 +54,7 @@ class AIAgent {
 
   // ---------- priority ----------
   async getAction(g, p) {
+    this._g = g;
     const key = g.turn + ':' + g.step + ':' + g.stack.length;
     if (key !== this.windowKey) { this.windowKey = key; this.actions = 0; }
     if (++this.actions > 12) return { type: 'pass' };
@@ -161,7 +179,7 @@ class AIAgent {
         const spec = g.auraSpec(card);
         const cands = this.cands(g, p, card, spec).filter(o => o.player == null);
         if (im.harm) {
-          const t = this.best(cands.filter(o => g.ctrl(o) !== p && g.isCreature(o)), o => this.value(g, o));
+          const t = this.best(cands.filter(o => g.ctrl(o) !== p && g.isCreature(o) && !this.alreadyAffected(g, o, d.name)), o => this.value(g, o));
           if (!t || this.value(g, t) < 3) return null;
           return { score: cmcScore + 1, intent: [t] };
         }
@@ -221,22 +239,22 @@ class AIAgent {
       case 'drain': return { score: cmcScore, intent: [{ player: opp }] };
       case 'wrath': {
         const mine = g.creatures(p).reduce((s, o) => s + this.value(g, o), 0);
-        const theirs = g.creatures(opp).reduce((s, o) => s + this.value(g, o), 0);
+        const theirs = this.oppsSum(g, p, q => g.creatures(q).reduce((s, o) => s + this.value(g, o), 0));
         if (theirs - mine < 6) return null;
         return { score: 10, mode: 1 };
       }
       case 'wrathArtEnch': case 'wrathEnch': {
         const f = o => g.is(o, 'Enchantment') || (tag === 'wrathArtEnch' && g.is(o, 'Artifact'));
-        if (g.perms(opp, f).length - g.perms(p, f).length < 2) return null;
+        if (this.oppsSum(g, p, q => g.perms(q, f).length) - g.perms(p, f).length < 2) return null;
         return { score: 5 };
       }
       case 'wrathFlyers': {
         const fl = pl => g.creatures(pl).filter(o => g.has(o, 'flying')).reduce((s, o) => s + this.value(g, o), 0);
-        if (fl(opp) - fl(p) < 4) return null; return { score: 6 };
+        if (this.oppsSum(g, p, fl) - fl(p) < 4) return null; return { score: 6 };
       }
       case 'sweep2': {
         const k = pl => g.creatures(pl).filter(o => this.remaining(g, o) <= 2).reduce((s, o) => s + this.value(g, o), 0);
-        if (k(opp) - k(p) < 5 || g.players[p].life <= 4) return null; return { score: 6 };
+        if (this.oppsSum(g, p, k) - k(p) < 5 || g.players[p].life <= 4) return null; return { score: 6 };
       }
       case 'reanimate': {
         const c = g.players[p].graveyard.filter(x => x.def.types.includes('Creature') && (card.def.name !== 'Unearth' || x.def.cmc <= 3));
@@ -338,18 +356,18 @@ class AIAgent {
         const im = a.card.def.impl;
         const spec = im.spell.targets[0];
         if (!this.cands(g, p, a.card, spec).includes(top)) continue;
-        if (im.ai === 'soft2' && this.spareMana(g, opp) >= 2) continue;
-        if (im.ai === 'softX') { const x = g.maxAffordableX(p, a.card); if (x <= this.spareMana(g, opp)) continue; this.xIntent = x; }
+        if (im.ai === 'soft2' && this.spareMana(g, top.controller) >= 2) continue;
+        if (im.ai === 'softX') { const x = g.maxAffordableX(p, a.card); if (x <= this.spareMana(g, top.controller)) continue; this.xIntent = x; }
         this.intent = [top];
         return a;
       }
       for (const a of acts.filter(a => a.type === 'activate' && a.ab.ai && a.ab.ai.counter)) {
-        if (this.spareMana(g, opp) >= 1) continue;
+        if (this.spareMana(g, top.controller) >= 1) continue;
         this.intent = [top]; return a;
       }
       for (const a of acts.filter(a => a.type === 'activate' && a.ab.ai && (a.ab.ai.counterHard || a.ab.ai.counterX))) {
         if (!g.targetCandidates(a.ab.targets[0], { controller: p, source: a.obj }, a.obj).includes(top)) continue;
-        if (a.ab.ai.counterX && (a.obj.counters.verse || 0) <= this.spareMana(g, opp)) continue;
+        if (a.ab.ai.counterX && (a.obj.counters.verse || 0) <= this.spareMana(g, top.controller)) continue;
         this.intent = [top]; return a;
       }
     }
@@ -526,6 +544,7 @@ class AIAgent {
 
   // ---------- choices ----------
   async choose(g, p, req) {
+    this._g = g;
     await new Promise(r => setTimeout(r, this.delay ? Math.min(this.delay, 150) : 0));
     try { return this.chooseSync(g, p, req); } catch (e) { console.error('AI choose error', e, req); return this.fallback(req); }
   }
@@ -671,6 +690,10 @@ class AIAgent {
 
   chooseAttackers(g, p, cands) {
     const opp = this.oppOf(p);
+    const list = this.chooseAttackersAt(g, p, cands, opp);
+    return new Map(list.map(a => [a, opp]));
+  }
+  chooseAttackersAt(g, p, cands, opp) {
     const oppLife = g.players[opp].life, myLife = g.players[p].life;
     const blockers = g.creatures(opp).filter(o => !o.tapped);
     const chosen = [];
@@ -681,9 +704,9 @@ class AIAgent {
     // alpha strike if lethal even if they block the biggest ones
     const sortedPow = cands.map(a => Math.max(0, g.pow(a))).sort((a, b) => b - a);
     const afterBlocks = sortedPow.slice(blockers.length).reduce((s, x) => s + x, 0);
-    if (evasivePower >= oppLife || afterBlocks >= oppLife) return this.limitAttackers(g, cands.slice());
-    // how much can they hit back next turn?
-    const theirPower = g.creatures(opp).filter(o => !g.has(o, 'defender')).reduce((s, o) => s + Math.max(0, g.pow(o)), 0);
+    if (evasivePower >= oppLife || afterBlocks >= oppLife) return this.limitAttackers(g, cands.slice(), opp);
+    // how much could the strongest opponent hit back next turn?
+    const theirPower = Math.max(...g.opps(p).map(q => g.creatures(q).filter(o => !g.has(o, 'defender')).reduce((s, o) => s + Math.max(0, g.pow(o)), 0)));
     const keepBack = theirPower >= myLife - 2;
     for (const a of cands) {
       if (chosen.includes(a)) continue;
@@ -701,15 +724,17 @@ class AIAgent {
       }
       if (safe || (tradeOK && oppLife <= myLife + 4) || (bl.length === 0)) chosen.push(a);
     }
-    return this.limitAttackers(g, chosen);
+    return this.limitAttackers(g, chosen, opp);
   }
-  limitAttackers(g, chosen) {
+  limitAttackers(g, chosen, opp) {
+    opp = opp != null ? opp : this.oppOf(g.active);
     const cands = g.creatures(g.active).filter(o => g.canAttack(o));
     if (chosen.some(a => (a.def.impl || {}).allMustAttack)) chosen = cands.slice();
-    for (let i = 0; i < 3; i++) chosen = chosen.filter(a => { const im = a.def.impl || {}; return !(im.attackRestriction && im.attackRestriction(g, a, chosen)); });
+    const targetsOf = list => new Map(list.map(a => [a, opp]));
+    for (let i = 0; i < 3; i++) chosen = chosen.filter(a => { const im = a.def.impl || {}; return !(im.attackRestriction && im.attackRestriction(g, a, chosen, targetsOf(chosen))); });
     if (chosen.some(a => (a.def.impl || {}).allMustAttack) && chosen.length < cands.length) chosen = chosen.filter(a => !(a.def.impl || {}).allMustAttack);
     let limit = Infinity;
-    for (const s of g.battlefield) { const im = s.def.impl || {}; if (im.maxAttackers) limit = Math.min(limit, im.maxAttackers(g, s)); }
+    for (const s of g.battlefield) { const im = s.def.impl || {}; if (im.maxAttackers && g.ctrl(s) === opp) limit = Math.min(limit, im.maxAttackers(g, s)); }
     if (chosen.length <= limit) return chosen;
     const must = chosen.filter(a => (a.def.impl || {}).mustAttack);
     const rest = chosen.filter(a => !must.includes(a)).sort((a, b) => g.pow(b) - g.pow(a));

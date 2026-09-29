@@ -7,6 +7,10 @@ import openpyxl
 
 ROOT = os.path.join(os.path.dirname(__file__), '..')
 BASIC = {'blue': 'Island', 'green': 'Forest', 'white': 'Plains', 'red': 'Mountain', 'black': 'Swamp'}
+# changes requested on top of the spreadsheet (the basic land count is rebalanced to 60 afterwards)
+ADJUST = {
+    'green': {'Thorn Elemental': +1},
+}
 # spreadsheet spellings -> Oracle names
 ALIASES = {
     'pacificism': 'Pacifism',
@@ -46,6 +50,9 @@ def main():
             if name not in counts:
                 counts[name] = 2
                 notes.append(f'{ws.title}: added 2 {name} (no count in sheet)')
+        for name, n in ADJUST.get(ws.title.lower(), {}).items():
+            counts[name] = counts.get(name, 0) + n
+            notes.append(f'{ws.title}: {"+" if n > 0 else ""}{n} {name} (requested change)')
         basic = BASIC.get(ws.title.lower())
         for name, n in list(counts.items()):
             if n > 4 and name not in BASIC.values():

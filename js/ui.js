@@ -37,7 +37,7 @@ const UI = MTG.UI = {
     this.humans = this.online ? opts.players.map((p, i) => i === this.online.local) : opts.players.map(p => p.human);
     this.viewer = this.online ? this.online.local : (this.humans[0] ? 0 : 1);
     this.shownFor = this.humans.filter(Boolean).length > 1 ? null : this.viewer;
-    this.pending = null; this.passUntilTurn = null;
+    this.pending = null; this.passUntilTurn = null; this.conceding = new Set();
     this.onExit = opts.onExit;
     $('#log').innerHTML = '';
     const agents = this.online ? this.online.agents : opts.players.map((p, i) => {
@@ -162,6 +162,7 @@ const UI = MTG.UI = {
   },
   requestAction(p) {
     if (this.g.over) return Promise.resolve({ type: 'pass' });
+    if (this.conceding && this.conceding.has(p)) return Promise.resolve({ type: 'concede' });
     if (this.shouldAutoPass(p)) {
       // give the player a moment to see the opponent's spell or ability before it resolves
       const top = this.g.stack[this.g.stack.length - 1];
@@ -178,7 +179,7 @@ const UI = MTG.UI = {
     return new Promise(async resolve => {
       await this.ensureViewer(p);
       const pend = { kind: 'choice', p, req, resolve, sel: [], blocks: new Map(), pickBlocker: null };
-      if (req.type === 'attackers') pend.sel = [];
+      if (req.type === 'attackers') { pend.sel = []; pend.attackTo = new Map(); pend.curTarget = (req.defenders || [])[0]; }
       this.pending = pend;
       this.render();
       if (['cards', 'mulligan', 'reveal', 'mode'].includes(req.type) || (req.type === 'target' && this.needsTargetModal(req))) this.openChoiceModal();
@@ -198,13 +199,16 @@ const UI = MTG.UI = {
   // ---------- rendering ----------
   render() {
     const g = this.g; if (!g) return;
-    const me = this.viewer, op = 1 - me;
-    const pend = this.pending;
+    const me = this.viewer;
     const board = $('#board');
+    // opponents in turn order after you; with more than one, they share the top half side by side
+    const others = [];
+    for (let i = 1; i < g.players.length; i++) others.push((me + i) % g.players.length);
+    const oppPanel = p => `<div class="opppanel ${g.players[p].lost ? 'out' : ''}">${this.renderPlayerBar(p, false)}${this.renderOppHand(p)}<div class="field opp">${this.renderField(p)}</div></div>`;
+    board.classList.toggle('multi', others.length > 1);
     board.innerHTML = [
-      this.renderPlayerBar(op, false),
-      this.renderOppHand(op),
-      `<div class="field opp">${this.renderField(op)}</div>`,
+      others.length > 1 ? `<div class="opps n${others.length}">${others.map(oppPanel).join('')}</div>` :
+        this.renderPlayerBar(others[0], false) + this.renderOppHand(others[0]) + `<div class="field opp">${this.renderField(others[0])}</div>`,
       this.renderMidbar(),
       `<div class="field me">${this.renderField(me)}</div>`,
       this.renderHand(me),
@@ -227,12 +231,13 @@ const UI = MTG.UI = {
   },
   renderPlayerBar(p, mine) {
     const g = this.g, pl = g.players[p], pend = this.pending;
-    const cand = pend && pend.kind === 'choice' && pend.req.type === 'target' && pend.req.candidates.some(c => c.player === p);
-    const targeted = this.targetedIds().has('p' + p);
+    const attackPick = pend && pend.kind === 'choice' && pend.req.type === 'attackers' && (pend.req.defenders || []).length > 1 && pend.req.defenders.includes(p);
+    const cand = (pend && pend.kind === 'choice' && pend.req.type === 'target' && pend.req.candidates.some(c => c.player === p)) || (attackPick && pend.curTarget !== p);
+    const targeted = this.targetedIds().has('p' + p) || (attackPick && pend.curTarget === p);
     const pool = Object.entries(pl.pool).filter(([, v]) => v).map(([k, v]) => `<span class="pip ${k}">${v}</span>`).join('');
     return `<div class="pbar ${mine ? 'me' : ''}">
       <div class="avatar ${g.active === p ? 'active' : ''} ${g.priority === p ? 'prio' : ''} ${cand ? 'cand' : ''} ${targeted ? 'targeted' : ''}" data-player="${p}">
-        <div class="life">${pl.life}</div><div><div class="pname">${esc(pl.name)}</div><div style="font-size:11px;color:var(--muted)">${this.online ? (p === this.viewer ? 'You' : 'Online opponent') : this.humans[p] ? 'Human' : 'Computer'}</div></div>
+        <div class="life">${pl.life}</div><div><div class="pname">${esc(pl.name)}</div><div style="font-size:11px;color:var(--muted)">${pl.lost ? 'Out of the game' : this.seatLabel(p)}</div></div>
       </div>
       <div class="mana-pool">${pool ? 'Pool: ' + pool : ''}</div>
       <div class="zones">
@@ -243,6 +248,11 @@ const UI = MTG.UI = {
       </div>
     </div>`;
   },
+  seatLabel(p) {
+    if (p === this.viewer) return this.online ? 'You' : 'Human';
+    if (this.online) return (this.online.types && this.online.types[p] === 'ai') ? 'Computer' : 'Online player';
+    return this.humans[p] ? 'Human' : 'Computer';
+  },
   apertureHTML(p) {
     const g = this.g, pl = g.players[p], top = pl.library[pl.library.length - 1];
     if (!top || !pl.aperture || pl.aperture.turn !== g.turn || pl.aperture.uid !== (top.uid || top.id)) return '';
@@ -252,7 +262,7 @@ const UI = MTG.UI = {
   renderOppHand(p) {
     const g = this.g, hand = g.players[p].hand;
     // Telepathy: "Your opponents play with their hands revealed."
-    if (g.perms(1 - p, o => o.def.name === 'Telepathy').length) return `<div class="opphand revealed">${hand.map(c => `<div class="card mini" data-id="${c.id}" title="${esc(c.def.name)}" style="background-image:url('${c.def.img || ''}')"></div>`).join('')}</div>`;
+    if (p !== this.viewer && g.perms(this.viewer, o => o.def.name === 'Telepathy').length) return `<div class="opphand revealed">${hand.map(c => `<div class="card mini" data-id="${c.id}" title="${esc(c.def.name)}" style="background-image:url('${c.def.img || ''}')"></div>`).join('')}</div>`;
     return `<div class="opphand">${'<div class="cardback"></div>'.repeat(hand.length)}</div>`;
   },
   renderField(p) {
@@ -325,9 +335,20 @@ const UI = MTG.UI = {
     const ctrs = Object.entries(o.counters).map(([k, v]) => (k === 'p1p1' ? '+1/+1' : k === 'm1m1' ? '-1/-1' : k) + '×' + v).join(' ');
     if (ctrs) inner += `<div class="ctr">${esc(ctrs)}</div>`;
     if (o.regen) inner += `<div class="ctr" style="top:auto;bottom:22px">regen ×${o.regen}</div>`;
-    if (pend && pend.kind === 'choice' && pend.req.type === 'blockers' && pend.blocks.has(o)) inner += `<div class="blk">blocks ${esc(pend.blocks.get(o).map(a => a.def.name).join(', '))}</div>`;
-    else if (o.blocking && g.combat) inner += `<div class="blk">blocking ${esc(g.attackersBlockedBy(o).map(a => a.def.name).join(', '))}</div>`;
-    return `<div class="${cls.join(' ')}" data-id="${o.id}" ${style ? `style="${style}"` : ''}>${inner}</div>`;
+    const multi = g.livePlayers().length > 2;
+    if (pend && pend.kind === 'choice' && pend.req.type === 'attackers' && pend.attackTo && pend.attackTo.has(o) && multi) inner += `<div class="blk atk">→ ${esc(g.pname(pend.attackTo.get(o)))}</div>`;
+    else if (o.attacking && o.attackTarget != null && multi) inner += `<div class="blk atk">→ ${esc(g.pname(o.attackTarget))}</div>`;
+    // combat numbers: each attacker gets ⚔N so blockers can say exactly which one they block
+    const num = a => (g.combat ? g.combat.attackers.indexOf(a) + 1 : 0);
+    const label = a => `⚔${num(a)} ${a.def.name}`;
+    let links = [];
+    if (o.attacking && num(o)) {
+      inner += `<div class="atknum" title="Attacker #${num(o)}">⚔${num(o)}</div>`;
+      links = g.blockersOf(o).map(b => b.id);
+    }
+    if (pend && pend.kind === 'choice' && pend.req.type === 'blockers' && pend.blocks.has(o)) { inner += `<div class="blk">blocks ${esc(pend.blocks.get(o).map(label).join(', '))}</div>`; links = pend.blocks.get(o).map(a => a.id); }
+    else if (o.blocking && g.combat) { const as = g.attackersBlockedBy(o); inner += `<div class="blk">blocking ${esc(as.map(label).join(', '))}</div>`; links = as.map(a => a.id); }
+    return `<div class="${cls.join(' ')}" data-id="${o.id}" ${links.length ? `data-links="${links.join(',')}"` : ''} ${style ? `style="${style}"` : ''}>${inner}</div>`;
   },
   renderMidbar() {
     const g = this.g, pend = this.pending;
@@ -352,7 +373,12 @@ const UI = MTG.UI = {
       } else if (r.type === 'yesno') buttons = `<button class="primary" data-act="yes">Yes</button><button data-act="no">No</button>`;
       else if (r.type === 'number') buttons = `<input type="number" id="numIn" min="${r.min}" max="${r.max}" value="${r.reason === 'X' ? r.max : r.min}" style="width:70px"> <small>(${r.min}–${r.max})</small> <button class="primary" data-act="num">OK</button>${r.reason === 'X' ? '<button data-act="cancel">Cancel</button>' : ''}`;
       else if (r.type === 'color') buttons = MTG.COLORS.map(c => `<button data-color="${c}"><span class="pip ${c}">${c}</span> ${MTG.COLOR_NAME[c]}</button>`).join('');
-      else if (r.type === 'attackers') { prompt += ` <small>Click creatures to toggle. ${pend.sel.length} selected.</small>`; buttons = `<button class="primary" data-act="attack">${pend.sel.length ? 'Attack' : 'No attack'}</button><button data-act="allattack">All</button><button data-act="clear">Clear</button>`; }
+      else if (r.type === 'attackers') {
+        const multi = (r.defenders || []).length > 1;
+        prompt += multi ? ` <small>Attacking <b>${esc(g.pname(pend.curTarget))}</b> — click another player's portrait to change target, then click creatures. ${pend.sel.length} selected.</small>`
+          : ` <small>Click creatures to toggle. ${pend.sel.length} selected.</small>`;
+        buttons = `<button class="primary" data-act="attack">${pend.sel.length ? 'Attack' : 'No attack'}</button><button data-act="allattack">All${multi ? ' → ' + esc(g.pname(pend.curTarget)) : ''}</button><button data-act="clear">Clear</button>`;
+      }
       else if (r.type === 'blockers') { prompt += pend.pickBlocker ? ` <small>Now click the attacker for ${esc(pend.pickBlocker.def.name)} to block.</small>` : ' <small>Click one of your creatures, then an attacker. Click a blocker again to undo.</small>'; buttons = `<button class="primary" data-act="block">${pend.blocks.size ? 'Confirm blocks' : 'No blocks'}</button><button data-act="clear">Clear</button>`; }
       else if (r.type === 'cards' || r.type === 'mulligan' || r.type === 'reveal' || r.type === 'mode') buttons = `<button data-act="reopen">Show choice</button>`;
     }
@@ -407,7 +433,12 @@ const UI = MTG.UI = {
     board.querySelectorAll('[data-id]').forEach(el => {
       const o = this.findObj(+el.dataset.id);
       if (!o) return;
-      el.onmouseenter = () => this.preview(o.def, o);
+      el.onmouseenter = () => {
+        this.preview(o.def, o);
+        // highlight the creatures this one is fighting
+        (el.dataset.links || '').split(',').filter(Boolean).forEach(id => { const t = board.querySelector(`.card[data-id="${id}"]`); if (t) t.classList.add('linked'); });
+      };
+      el.onmouseleave = () => board.querySelectorAll('.card.linked').forEach(t => t.classList.remove('linked'));
       el.onclick = ev => this.clickObj(o, ev);
       el.oncontextmenu = ev => { ev.preventDefault(); this.clickObj(o, ev, true); };
     });
@@ -433,15 +464,16 @@ const UI = MTG.UI = {
         if (!(v >= r.min && v <= r.max)) return this.toast(`Choose a number from ${r.min} to ${r.max}.`);
         return this.submit(v);
       }
-      case 'attack': return this.submit(pend.sel.slice());
-      case 'allattack': pend.sel = pend.req.candidates.slice(); return this.render();
-      case 'clear': pend.sel = []; pend.blocks = new Map(); pend.pickBlocker = null; return this.render();
+      case 'attack': return this.submit((pend.req.defenders || []).length > 1 ? new Map(pend.sel.map(o => [o, pend.attackTo.get(o)])) : pend.sel.slice());
+      case 'allattack': pend.sel = pend.req.candidates.slice(); pend.sel.forEach(o => pend.attackTo.set(o, pend.curTarget)); return this.render();
+      case 'clear': pend.sel = []; if (pend.attackTo) pend.attackTo.clear(); pend.blocks = new Map(); pend.pickBlocker = null; return this.render();
       case 'block': return this.submit(pend.blocks);
       case 'reopen': return this.openChoiceModal();
     }
   },
   clickPlayer(p) {
     const pend = this.pending;
+    if (pend && pend.kind === 'choice' && pend.req.type === 'attackers' && (pend.req.defenders || []).includes(p)) { pend.curTarget = p; return this.render(); }
     if (pend && pend.kind === 'choice' && pend.req.type === 'target') {
       const t = pend.req.candidates.find(c => c.player === p);
       if (t) this.submit(t);
@@ -466,7 +498,10 @@ const UI = MTG.UI = {
     const r = pend.req;
     if (r.type === 'target' && r.candidates.includes(o)) return this.submit(o);
     if (r.type === 'attackers' && r.candidates.includes(o)) {
-      const i = pend.sel.indexOf(o); if (i >= 0) pend.sel.splice(i, 1); else pend.sel.push(o);
+      const i = pend.sel.indexOf(o);
+      // clicking a selected attacker again removes it, unless you've switched target (then it is re-aimed)
+      if (i >= 0 && pend.attackTo.get(o) === pend.curTarget) { pend.sel.splice(i, 1); pend.attackTo.delete(o); }
+      else { if (i < 0) pend.sel.push(o); pend.attackTo.set(o, pend.curTarget); }
       return this.render();
     }
     if (r.type === 'blockers') {
@@ -586,18 +621,19 @@ const UI = MTG.UI = {
     if (r.type === 'cards') {
       const onBoard = r.cards.every(c => c.zone === 'battlefield');
       // your own permanents first
-      const cards = onBoard ? r.cards.slice().sort((a, b) => (g.ctrl(b) === this.viewer) - (g.ctrl(a) === this.viewer)) : r.cards;
+      // r.shown: every card being looked at (e.g. a revealed hand); only r.cards can be picked
+      const cards = onBoard ? r.cards.slice().sort((a, b) => (g.ctrl(b) === this.viewer) - (g.ctrl(a) === this.viewer)) : (r.shown || r.cards);
       const mineCount = onBoard ? cards.filter(c => g.ctrl(c) === this.viewer).length : 0;
-      const m = this.modal(`<h2>${esc(r.prompt)}</h2><div class="cards">${cards.map(c => this.modalCard(c, pend.sel.includes(c) ? 'chosen' : 'cand')).join('')}</div>
+      const m = this.modal(`<h2>${esc(r.prompt)}</h2><div class="cards">${cards.map(c => this.modalCard(c, !r.cards.includes(c) ? 'dim' : pend.sel.includes(c) ? 'chosen' : 'cand')).join('')}</div>
         <div class="foot"><span class="info">Selected ${pend.sel.length} (choose ${r.min === r.max ? r.min : r.min + '–' + r.max})</span>
         ${mineCount && r.max > 1 ? '<button data-m="mine">Select my ' + (cards.every(c => g.is(c, 'Land')) ? 'lands' : 'permanents') + '</button>' : ''}
         ${onBoard ? '<button data-m="hide">Look at board</button>' : ''}<button class="primary" data-m="ok" ${pend.sel.length < r.min || pend.sel.length > r.max ? 'disabled' : ''}>Confirm</button></div>`);
       const mb = m.querySelector('[data-m=mine]');
       if (mb) mb.onclick = () => { pend.sel = cards.filter(c => g.ctrl(c) === this.viewer).slice(0, r.max); this.render(); this.openChoiceModal(); };
-      m.querySelectorAll('[data-mid]').forEach(el => el.onclick = () => this.toggleCardSel(r.cards.find(c => c.id === +el.dataset.mid)));
+      m.querySelectorAll('[data-mid]').forEach(el => { const c = r.cards.find(x => x.id === +el.dataset.mid); if (c) el.onclick = () => this.toggleCardSel(c); });
       m.querySelector('[data-m=ok]').onclick = () => this.submit(pend.sel.slice());
       const hb = m.querySelector('[data-m=hide]'); if (hb) hb.onclick = () => this.closeModal();
-      this.bindModalPreview(m, r.cards);
+      this.bindModalPreview(m, cards);
     }
   },
   bindModalPreview(m, cards) {
@@ -627,12 +663,14 @@ const UI = MTG.UI = {
   concede() {
     const g = this.g; if (!g || g.over) return;
     const p = this.online ? this.viewer : this.pending ? this.pending.p : this.viewer;
+    if (g.players[p].lost) return;
     if (!confirm(`${g.pname(p)} concedes?`)) return;
-    if (this.online) { MTG.Net.send({ t: 'concede', p }); MTG.Net.releaseWaiters(); }
-    g.players[p].lost = true; g.over = true; g.winner = 1 - p;
-    g.say(`${g.pname(p)} concedes.`);
-    if (this.pending) { const pend = this.pending; this.pending = null; pend.resolve(pend.kind === 'priority' ? { type: 'pass' } : null); }
-    this.gameOver();
+    // Conceding is that player's next decision, so every engine (online or not) applies it at the same point.
+    this.conceding = this.conceding || new Set();
+    this.conceding.add(p);
+    const pend = this.pending;
+    if (pend && pend.p === p) { this.pending = null; this.closeModal(); pend.resolve(pend.kind === 'priority' ? { type: 'concede' } : null); }
+    this.toast(`${g.pname(p)} will concede at their next chance to act.`);
   },
 };
 

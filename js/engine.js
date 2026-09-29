@@ -188,7 +188,12 @@ class Game {
   }
   // ----- bookkeeping -----
   bump() { this.ver++; this._cache = null; }
-  opp(p) { return 1 - p; }
+  // Seats: players still in the game, in turn order. With two players, opp(p) is simply the other player.
+  livePlayers() { return this.players.filter(pl => !pl.lost).map(pl => pl.idx); }
+  nextPlayer(p) { const n = this.players.length; for (let i = 1; i <= n; i++) { const q = (p + i) % n; if (!this.players[q].lost) return q; } return p; }
+  opp(p) { return this.nextPlayer(p); }
+  opps(p) { const out = []; let q = p; for (let i = 0; i < this.players.length; i++) { q = (q + 1) % this.players.length; if (q !== p && !this.players[q].lost) out.push(q); } return out; }
+  apnap() { return [this.active, ...this.opps(this.active)].filter(q => !this.players[q].lost); }
   say(msg) { this.log.push(msg); this.onLog(msg); }
   makeObj(def, owner, zone) {
     return { id: this.nextId++, def, owner, controller: owner, zone, tapped: false, damage: 0, counters: {},
@@ -608,7 +613,7 @@ class Game {
     while (this.pendingTriggers.length) {
       const list = this.pendingTriggers; this.pendingTriggers = [];
       // APNAP order: active player's go on the stack first (resolve last)
-      const order = [this.active, this.opp(this.active)];
+      const order = this.apnap();
       for (const p of order) {
         for (const pt of list.filter(x => x.controller === p)) await this.putTriggerOnStack(pt);
       }
@@ -647,7 +652,7 @@ class Game {
       return !spec.filter || spec.filter(this, o, ctx);
     };
     if (kind === 'player' || kind === 'any') {
-      for (const p of [0, 1]) if (!spec.pfilter || spec.pfilter(this, p, ctx)) out.push({ player: p });
+      for (const p of this.livePlayers()) if (!spec.pfilter || spec.pfilter(this, p, ctx)) out.push({ player: p });
     }
     if (kind === 'permanent' || kind === 'any' || kind === 'creature') {
       for (const o of this.battlefield) {
@@ -656,7 +661,7 @@ class Game {
       }
     }
     if (kind === 'graveyard') {
-      for (const p of [0, 1]) for (const o of this.players[p].graveyard) if (okObj(o)) out.push(o);
+      for (const p of this.livePlayers()) for (const o of this.players[p].graveyard) if (okObj(o)) out.push(o);
     }
     if (kind === 'spell') {
       for (const s of this.stack) if (s !== ctx.selfItem && (!spec.filter || spec.filter(this, s, ctx))) out.push(s);
@@ -665,7 +670,7 @@ class Game {
   }
   targetLegal(spec, t, ctx, src) {
     if (!t) return false;
-    if (t.player != null) return (spec.kind === 'player' || spec.kind === 'any') && (!spec.pfilter || spec.pfilter(this, t.player, ctx));
+    if (t.player != null) return (spec.kind === 'player' || spec.kind === 'any') && !this.players[t.player].lost && (!spec.pfilter || spec.pfilter(this, t.player, ctx));
     if (t.kind === 'spell' || t.kind === 'ability') return this.stack.includes(t) && (!spec.filter || spec.filter(this, t, ctx));
     if (!this.alive(t)) return false;
     const kind = spec.kind || 'permanent';
@@ -1309,19 +1314,22 @@ class Game {
     let any = true, loops = 0;
     while (any && loops++ < 50) {
       any = false;
+      const newlyLost = [];
       for (const pl of this.players) {
         if (!pl.lost && (pl.life <= 0 || pl.drewFromEmpty)) {
-          pl.lost = true; any = true;
+          pl.lost = true; any = true; newlyLost.push(pl.idx);
           this.say(`${pl.name} loses the game${pl.life <= 0 ? ' (life total ' + pl.life + ')' : ' (drew from an empty library)'}.`);
         }
       }
-      if (this.players.some(p => p.lost)) {
+      for (const pl of this.players) if (pl.lost && !pl.removed) newlyLost.includes(pl.idx) || newlyLost.push(pl.idx);
+      const alive = this.livePlayers();
+      if (alive.length <= 1) {
         this.over = true;
-        const alive = this.players.filter(p => !p.lost);
-        this.winner = alive.length === 1 ? alive[0].idx : null;
+        this.winner = alive.length === 1 ? alive[0] : null;
         this.bump(); this.onUpdate();
         return;
       }
+      for (const p of newlyLost) this.removePlayer(p);
       const toGY = [], toDestroy = [];
       for (const o of this.battlefield) {
         if (this.isCreature(o)) {
@@ -1335,7 +1343,7 @@ class Game {
         }
       }
       // legend rule (704.5j)
-      for (const p of [0, 1]) {
+      for (const p of this.livePlayers()) {
         const legends = this.perms(p, o => this.c(o).supertypes.has('Legendary'));
         const byName = {};
         for (const o of legends) (byName[o.def.name] = byName[o.def.name] || []).push(o);
@@ -1357,6 +1365,24 @@ class Game {
         this.moveMany([...uniqGY.filter(o => this.alive(o)), ...dying], 'graveyard');
       }
     }
+  }
+  // 800.4a: a player who leaves a multiplayer game takes their cards with them
+  removePlayer(p) {
+    const pl = this.players[p];
+    if (pl.removed) return;
+    pl.removed = true;
+    this.say(`${pl.name} leaves the game; their cards leave with them.`);
+    this.stack = this.stack.filter(s => s.controller !== p && !(s.card && s.card.owner === p));
+    const leaving = this.battlefield.filter(o => o.owner === p);
+    this.battlefield = this.battlefield.filter(o => o.owner !== p);
+    for (const o of leaving) { o.zone = 'moved'; if (this.combat) this.removeFromCombat(o); }
+    for (const a of this.battlefield) if (leaving.some(o => o.id === a.attachedTo)) a.attachedTo = null;
+    // anything else they still control is exiled
+    for (const o of this.battlefield.filter(o => this.ctrl(o) === p)) this.moveTo(o, 'exile', { quiet: true });
+    this.pendingTriggers = this.pendingTriggers.filter(t => t.controller !== p);
+    this.delayed = this.delayed.filter(d => d.controller !== p);
+    for (const o of this.battlefield) if (o.attackTarget === p) { o.attacking = false; if (this.combat) this.removeFromCombat(o); }
+    this.bump();
   }
   checkStateTriggers() {
     // 603.8: a state trigger fires once and won't again while its ability is on the stack
@@ -1388,16 +1414,17 @@ class Game {
   // ----- turn structure -----
   async start() {
     this.say('Game start.');
-    for (const p of [0, 1]) this.shuffleLib(p);
-    this.active = this.rand() < 0.5 ? 0 : 1;
+    for (const pl of this.players) this.shuffleLib(pl.idx);
+    this.active = Math.floor(this.rand() * this.players.length);
     this.say(`${this.pname(this.active)} goes first.`);
-    for (const p of [this.active, this.opp(this.active)]) await this.mulligan(p);
+    for (const p of this.apnap()) await this.mulligan(p);
     this.firstPlayer = this.active;
     while (!this.over) {
       await this.takeTurn();
       if (this.over) break;
+      while (this.extraTurns.length && this.players[this.extraTurns[0]].lost) this.extraTurns.shift();
       if (this.extraTurns.length) this.active = this.extraTurns.shift();
-      else this.active = this.opp(this.active);
+      else this.active = this.nextPlayer(this.active);
     }
     this.bump(); this.onUpdate();
     return this.winner;
@@ -1431,7 +1458,7 @@ class Game {
     this.flags = {};
     this.say(`— Turn ${this.turn}: ${pl.name} —`);
     for (const step of STEPS) {
-      if (this.over) return;
+      if (this.over || this.players[ap].lost) break;
       if ((step === 'declareBlockers' || step === 'firstStrikeDamage' || step === 'combatDamage') && (!this.combat || !this.combat.attackers.length)) continue;
       if (step === 'firstStrikeDamage' && !this.combatHasFirstStrike()) continue;
       this.step = step; this.bump(); this.onUpdate();
@@ -1469,7 +1496,7 @@ class Game {
         break;
       case 'draw': {
         const pl = this.players[ap];
-        if (this.turn === 1) break; // player going first skips draw (103.8a)
+        if (this.turn === 1 && this.players.length === 2) break; // player going first skips draw in 2-player games (103.8a)
         if (pl.skipDraw) { pl.skipDraw--; this.say(`${pl.name} skips the draw.`); break; }
         if (this.perms(ap, o => this.impl(o).skipDraw).length) break;
         await this.draw(ap, 1);
@@ -1506,7 +1533,7 @@ class Game {
     }
     await this.priorityRound();
     if (step === 'endCombat') {
-      for (const o of this.battlefield) { o.attacking = false; o.blocking = false; }
+      for (const o of this.battlefield) { o.attacking = false; o.blocking = false; o.attackTarget = null; }
       this.combat = null; this.bump();
     }
   }
@@ -1542,24 +1569,25 @@ class Game {
   async priorityRound() {
     let passes = 0;
     let p = this.active;
-    for (let guard = 0; guard < 2000; guard++) {
+    for (let guard = 0; guard < 4000; guard++) {
       await this.settle();
       if (this.over) return;
+      if (this.players[p].lost) { p = this.nextPlayer(p); passes = 0; continue; }
       this.priority = p; this.bump(); this.onUpdate();
       const act = await this.players[p].agent.getAction(this, p);
       if (this.over) return;
       if (!act || act.type === 'pass') {
         passes++;
-        if (passes >= 2) {
+        if (passes >= this.livePlayers().length) {
           if (!this.stack.length) { this.priority = null; return; }
           await this.resolveTop();
-          passes = 0; p = this.active;
+          passes = 0; p = this.players[this.active].lost ? this.nextPlayer(this.active) : this.active;
           continue;
         }
-        p = this.opp(p);
+        p = this.nextPlayer(p);
         continue;
       }
-      if (act.type === 'concede') { this.players[p].lost = true; this.say(`${this.pname(p)} concedes.`); await this.checkSBA(); return; }
+      if (act.type === 'concede') { this.players[p].lost = true; this.say(`${this.pname(p)} concedes.`); await this.checkSBA(); if (this.over || p === this.active) return; passes = 0; p = this.nextPlayer(p); continue; }
       const ok = await this.performAction(p, act);
       if (ok && act.type !== 'mana') passes = 0;
     }
@@ -1580,25 +1608,35 @@ class Game {
     const cands = this.creatures(ap).filter(o => this.canAttack(o));
     this.combat.attackers = [];
     if (!cands.length) return;
-    let chosen;
+    const defenders = this.opps(ap);
+    let chosen, targets;
     for (let tries = 0; tries < 5; tries++) {
-      chosen = await this.ask(ap, { type: 'attackers', prompt: 'Declare attackers', candidates: cands });
-      chosen = (chosen || []).filter(o => cands.includes(o));
-      const err = this.attackError(chosen, cands);
+      // answer: array of attackers (all attack the next opponent) or Map(attacker -> defending player)
+      const ans = await this.ask(ap, { type: 'attackers', prompt: defenders.length > 1 ? 'Declare attackers (choose who each one attacks)' : 'Declare attackers', candidates: cands, defenders });
+      targets = new Map();
+      if (ans instanceof Map) { for (const [o, d] of ans) if (cands.includes(o)) targets.set(o, defenders.includes(d) ? d : defenders[0]); }
+      else for (const o of (ans || [])) if (cands.includes(o)) targets.set(o, defenders[0]);
+      chosen = [...targets.keys()];
+      const err = this.attackError(chosen, cands, targets);
       if (!err) break;
       this.say('Illegal attack: ' + err);
-      if (tries === 4) chosen = [];
+      if (tries === 4) { chosen = []; targets = new Map(); }
     }
     for (const o of chosen) {
-      o.attacking = true; o.data.attackedTurn = this.turn;
+      o.attacking = true; o.attackTarget = targets.get(o); o.data.attackedTurn = this.turn;
       if (!this.has(o, 'vigilance')) this.tap(o);
       this.combat.attackers.push(o);
     }
-    if (chosen.length) this.say(`${this.pname(ap)} attacks with ${chosen.map(o => o.def.name).join(', ')}.`);
+    if (chosen.length) {
+      const tag = o => `⚔${this.combat.attackers.indexOf(o) + 1} ${o.def.name}`;
+      if (defenders.length > 1) for (const d of defenders) { const at = chosen.filter(o => o.attackTarget === d); if (at.length) this.say(`${this.pname(ap)} attacks ${this.pname(d)} with ${at.map(tag).join(', ')}.`); }
+      else this.say(`${this.pname(ap)} attacks with ${chosen.map(tag).join(', ')}.`);
+    }
     for (const o of chosen) this.emit('attacks', { obj: o });
     this.bump();
   }
-  attackError(chosen, cands) {
+  attackError(chosen, cands, targets) {
+    targets = targets || new Map(chosen.map(o => [o, this.opps(this.active)[0]]));
     for (const o of cands) {
       if (chosen.includes(o)) continue;
       const im = this.impl(o);
@@ -1606,12 +1644,12 @@ class Game {
     }
     for (const o of chosen) {
       const im = this.impl(o);
-      if (im.attackRestriction) { const e = im.attackRestriction(this, o, chosen); if (e) return e; }
+      if (im.attackRestriction) { const e = im.attackRestriction(this, o, chosen, targets); if (e) return e; }
       if (im.allMustAttack) { const miss = cands.find(x => !chosen.includes(x)); if (miss) return `${o.def.name} is attacking, so ${miss.def.name} must attack too.`; }
     }
     for (const s of this.battlefield) {
       const im = this.impl(s);
-      if (im.maxAttackers && chosen.length > im.maxAttackers(this, s)) return `${s.def.name} limits the number of attackers.`;
+      if (im.maxAttackers && chosen.filter(o => targets.get(o) === this.ctrl(s)).length > im.maxAttackers(this, s)) return `${s.def.name}: no more than ${im.maxAttackers(this, s)} creatures can attack ${this.pname(this.ctrl(s))}.`;
     }
     return null;
   }
@@ -1626,6 +1664,7 @@ class Game {
     if (ca.flags.has('unblockable')) return false;
     if (this.protFrom(a, b)) return false;
     const defender = this.ctrl(b);
+    if (a.attackTarget != null && a.attackTarget !== defender) return false; // only the attacked player's creatures can block it
     for (const lw of ca.landwalk) if (this.perms(defender, x => this.c(x).subtypes.has(lw)).length) return false;
     const ima = this.impl(a);
     if (ima.blockRestriction && !ima.blockRestriction(this, a, b)) return false;
@@ -1635,8 +1674,35 @@ class Game {
   }
   maxBlocks(b) { return this.c(b).flags.has('blockAny') ? 99 : 1; }
   async declareBlockers() {
-    const dp = this.opp(this.active);
-    const attackers = this.combat.attackers.filter(a => this.alive(a));
+    const allAttackers = this.combat.attackers.filter(a => this.alive(a));
+    const blocks = new Map(); // blocker -> [attackers], for all defending players
+    for (const dp of this.opps(this.active)) {
+      const attackers = allAttackers.filter(a => a.attackTarget === dp);
+      if (!attackers.length) continue;
+      const mine = await this.declareBlocksFor(dp, attackers);
+      for (const [b, as] of mine) blocks.set(b, as);
+    }
+    const attackers = allAttackers;
+    for (const [b, as] of blocks) {
+      b.blocking = true;
+      this.combat.blockerOf.set(b.id, as.map(a => a.id));
+      for (const a of as) {
+        const l = this.combat.blocks.get(a.id) || [];
+        l.push(b.id); this.combat.blocks.set(a.id, l);
+        this.combat.blocked.add(a.id);
+      }
+    }
+    // "⚔N" matches the attacker's combat number shown on the board, so same-named attackers can be told apart
+    const tag = a => `⚔${this.combat.attackers.indexOf(a) + 1} ${a.def.name}`;
+    for (const [b, as] of blocks) this.say(`${b.def.name} blocks ${as.map(tag).join(', ')}.`);
+    for (const [b, as] of blocks) this.emit('blocks', { obj: b, attackers: as });
+    for (const a of attackers) {
+      const bl = this.combat.blocks.get(a.id);
+      if (bl && bl.length) this.emit('becomesBlocked', { obj: a, blockers: bl.map(id => this.byId(id)).filter(Boolean) });
+    }
+    this.bump();
+  }
+  async declareBlocksFor(dp, attackers) {
     const cands = this.creatures(dp).filter(b => attackers.some(a => this.canBlock(b, a)));
     let blocks = new Map(); // blocker -> [attackers]
     if (cands.length && attackers.length) {
@@ -1658,22 +1724,7 @@ class Game {
       const cur = blocks.get(b) || [];
       if (!cur.includes(a)) blocks.set(b, this.maxBlocks(b) > cur.length ? cur.concat(a) : [a]);
     }
-    for (const [b, as] of blocks) {
-      b.blocking = true;
-      this.combat.blockerOf.set(b.id, as.map(a => a.id));
-      for (const a of as) {
-        const l = this.combat.blocks.get(a.id) || [];
-        l.push(b.id); this.combat.blocks.set(a.id, l);
-        this.combat.blocked.add(a.id);
-      }
-    }
-    for (const [b, as] of blocks) this.say(`${b.def.name} blocks ${as.map(a => a.def.name).join(', ')}.`);
-    for (const [b, as] of blocks) this.emit('blocks', { obj: b, attackers: as });
-    for (const a of attackers) {
-      const bl = this.combat.blocks.get(a.id);
-      if (bl && bl.length) this.emit('becomesBlocked', { obj: a, blockers: bl.map(id => this.byId(id)).filter(Boolean) });
-    }
-    this.bump();
+    return blocks;
   }
   blockError(blocks, attackers) {
     for (const [b] of blocks) { const im = this.impl(b); if (im.blockRestriction2) { const e = im.blockRestriction2(this, b, blocks); if (e) return e; } }
@@ -1688,7 +1739,7 @@ class Game {
   byId(id) { return this.battlefield.find(o => o.id === id) || null; }
   removeFromCombat(o) {
     if (!this.combat) return;
-    o.attacking = false; o.blocking = false;
+    o.attacking = false; o.blocking = false; o.attackTarget = null;
     this.combat.attackers = this.combat.attackers.filter(x => x !== o);
     this.combat.blockerOf.delete(o.id);
     for (const [aid, l] of this.combat.blocks) this.combat.blocks.set(aid, l.filter(id => id !== o.id));
@@ -1705,7 +1756,6 @@ class Game {
   }
   async combatDamageStep(first) {
     const c = this.combat;
-    const dp = this.opp(this.active);
     const deals = o => {
       const fs = this.has(o, 'first strike'), ds = this.has(o, 'double strike');
       if (first) return fs || ds;
@@ -1720,6 +1770,8 @@ class Game {
       if (first) c.dealtFirst.add(a.id);
       if (power <= 0) continue;
       const blockers = this.blockersOf(a);
+      const dp = a.attackTarget != null ? a.attackTarget : this.opp(this.active);
+      if (this.players[dp].lost) continue;
       if (!this.isBlocked(a)) { assignments.push([a, { player: dp }, power]); continue; }
       const im = this.impl(a);
       if ((im.damageAsUnblocked || this.c(a).flags.has('asUnblocked')) && await this.yesno(this.ctrl(a), `Have ${a.def.name} assign its damage as though it weren't blocked?`, { asUnblocked: true })) {

@@ -93,7 +93,6 @@ window.MTG.SHEET_DECKS = {
 "Forest",
 "Forest",
 "Forest",
-"Forest",
 "Rofellos, Llanowar Emissary",
 "Might of Oaks",
 "Might of Oaks",
@@ -101,6 +100,7 @@ window.MTG.SHEET_DECKS = {
 "Fog",
 "Elvish Piper",
 "Elvish Piper",
+"Thorn Elemental",
 "Thorn Elemental",
 "Treetop Village",
 "Treetop Village",
@@ -312,4 +312,4 @@ window.MTG.SHEET_DECKS = {
 "Vampiric Tutor"
 ]
 };
-window.MTG.SHEET_NOTES = ["blue: added 2 Energy Field (no count in sheet)", "blue: added 2 Turnabout (no count in sheet)", "blue: added 5 Island to make 60 (27 Island total)", "green: added 2 Eladamri, Lord of Leaves (no count in sheet)", "green: added 7 Forest to make 60 (26 Forest total)", "white: added 2 False Prophet (no count in sheet)", "white: added 6 Plains to make 60 (22 Plains total)", "red: Shock capped at 4 (sheet had 5)", "red: added 1 Mountain to make 60 (24 Mountain total)", "black: added 2 Commander Greven il-Vec (no count in sheet)", "black: added 2 Diabolic Edict (no count in sheet)", "black: added 2 Sorceress Queen (no count in sheet)", "black: added 2 Vampiric Tutor (no count in sheet)", "black: removed 2 Swamp to make 60 (23 Swamp total)"];
+window.MTG.SHEET_NOTES = ["blue: added 2 Energy Field (no count in sheet)", "blue: added 2 Turnabout (no count in sheet)", "blue: added 5 Island to make 60 (27 Island total)", "green: added 2 Eladamri, Lord of Leaves (no count in sheet)", "green: +1 Thorn Elemental (requested change)", "green: added 6 Forest to make 60 (25 Forest total)", "white: added 2 False Prophet (no count in sheet)", "white: added 6 Plains to make 60 (22 Plains total)", "red: Shock capped at 4 (sheet had 5)", "red: added 1 Mountain to make 60 (24 Mountain total)", "black: added 2 Commander Greven il-Vec (no count in sheet)", "black: added 2 Diabolic Edict (no count in sheet)", "black: added 2 Sorceress Queen (no count in sheet)", "black: added 2 Vampiric Tutor (no count in sheet)", "black: removed 2 Swamp to make 60 (23 Swamp total)"];

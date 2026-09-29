@@ -3,54 +3,95 @@
 'use strict';
 const MTG = window.MTG;
 const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 MTG.buildDB();
 
-let mode = 'ai';
+let mode = 'local', count = 2;
 const RANDOM = '__random__';
+const AI_NAMES = ['Urza', 'Mishra', 'Yawgmoth', 'Gix'];
+// seats[i] for i >= 1: {type: 'ai' | 'human' | 'online', name, deck}
+const seats = [null, { type: 'ai', name: 'Urza (AI)', deck: null }, { type: 'ai', name: 'Mishra (AI)', deck: null }, { type: 'ai', name: 'Yawgmoth (AI)', deck: null }];
+
 function show(id) { ['#menu', '#builder', '#game'].forEach(s => $(s).classList.toggle('hidden', s !== id)); }
-function fillDecks() {
+function deckOptions(selected) {
   const all = MTG.DeckStore.all();
-  const opts = Object.keys(all).map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}${MTG.DeckStore.isStarter(n) ? '' : ' (custom)'}</option>`).join('') + `<option value="${RANDOM}">Random (2 colors)</option>`;
-  for (const id of ['#p1deck', '#p2deck']) {
-    const cur = $(id).value;
-    $(id).innerHTML = opts;
-    if (cur && [...$(id).options].some(o => o.value === cur)) $(id).value = cur;
+  return Object.keys(all).map(n => `<option value="${esc(n)}" ${n === selected ? 'selected' : ''}>${esc(n)}${MTG.DeckStore.isStarter(n) ? '' : ' (custom)'}</option>`).join('') +
+    `<option value="${RANDOM}" ${selected === RANDOM ? 'selected' : ''}>Random (2 colors)</option>`;
+}
+function fillDecks() {
+  const cur = $('#p1deck').value;
+  $('#p1deck').innerHTML = deckOptions(cur || Object.keys(MTG.DeckStore.all())[0]);
+  const names = Object.keys(MTG.DeckStore.all());
+  seats.forEach((s, i) => { if (s && !s.deck) s.deck = names[i % names.length] || RANDOM; });
+  renderSeats();
+}
+function renderSeats() {
+  const types = mode === 'online' ? [['online', 'Online player'], ['ai', 'Computer']] : [['ai', 'Computer'], ['human', 'Human (same screen)']];
+  let html = '';
+  for (let i = 1; i < count; i++) {
+    const s = seats[i];
+    if (!types.some(t => t[0] === s.type)) { s.type = types[0][0]; if (s.type === 'online') s.name = ''; }
+    html += `<div class="menu-row seat"><label>Seat ${i + 1}</label><div class="seatrow">
+      <select data-seat="${i}" data-f="type">${types.map(([v, l]) => `<option value="${v}" ${s.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      ${s.type === 'online' ? '<span class="seatnote">joins with their own name and deck</span>' :
+        `<input type="text" data-seat="${i}" data-f="name" value="${esc(s.name || '')}" placeholder="Name">
+         <select data-seat="${i}" data-f="deck">${deckOptions(s.deck)}</select>`}
+    </div></div>`;
   }
-  if (!$('#p2deck').dataset.init) { $('#p2deck').value = Object.keys(all)[1] || RANDOM; $('#p2deck').dataset.init = 1; }
+  $('#seats').innerHTML = html;
+  $('#seats').querySelectorAll('[data-seat]').forEach(el => el.onchange = el.oninput = () => {
+    const s = seats[+el.dataset.seat];
+    s[el.dataset.f] = el.value;
+    if (el.dataset.f === 'type') {
+      if (s.type === 'ai') s.name = `${AI_NAMES[+el.dataset.seat - 1]} (AI)`;
+      if (s.type === 'human') s.name = `Player ${+el.dataset.seat + 1}`;
+      renderSeats();
+    }
+  });
 }
 function deckFor(name) {
-  if (name === RANDOM) { const c = MTG.COLORS.slice().sort(() => Math.random() - .5); return MTG.randomDeck([c[0], c[1]]); }
+  if (name === RANDOM || !name) { const c = MTG.COLORS.slice().sort(() => Math.random() - .5); return MTG.randomDeck([c[0], c[1]]); }
   return MTG.DeckStore.all()[name].slice();
+}
+function checkDeck(name, who) {
+  if (name === RANDOM) return true;
+  const errs = MTG.validateDeck(MTG.DeckStore.all()[name] || []);
+  if (errs.length) { $('#menuNote').textContent = `${who}'s deck is not legal: ${errs[0]}`; return false; }
+  return true;
 }
 function setMode(m) {
   mode = m;
   const online = m === 'online';
   document.querySelectorAll('.offline-only').forEach(el => el.classList.toggle('hidden', online));
   document.querySelectorAll('.online-only').forEach(el => el.classList.toggle('hidden', !online));
-  if (!online) MTG.Net && MTG.Net.peer && MTG.Net.reset();
+  if (!online && MTG.Net && MTG.Net.peer) MTG.Net.reset();
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
-  $('#p2label').textContent = m === 'ai' ? 'Opponent' : 'Player 2';
-  const n = $('#p2name');
-  if (m === 'ai' && (n.value === 'Player 2' || !n.value)) n.value = 'Urza (AI)';
-  if (m === 'hotseat' && n.value === 'Urza (AI)') n.value = 'Player 2';
+  // an online game needs at least one online seat; start with seat 2 as an online player
+  if (online && !seats.slice(1, count).some(s => s.type === 'online')) { seats[1].type = 'online'; seats[1].name = ''; }
+  renderSeats();
+}
+function setCount(n) {
+  count = n;
+  document.querySelectorAll('#countSeg button').forEach(b => b.classList.toggle('on', +b.dataset.n === n));
+  renderSeats();
 }
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+document.querySelectorAll('#countSeg button').forEach(b => b.onclick = () => setCount(+b.dataset.n));
+
 $('#startBtn').onclick = () => {
-  const decks = [$('#p1deck').value, $('#p2deck').value];
-  for (const [i, d] of decks.entries()) {
-    if (d === RANDOM) continue;
-    const errs = MTG.validateDeck(MTG.DeckStore.all()[d]);
-    if (errs.length) { $('#menuNote').textContent = `${i ? 'Opponent' : 'Player 1'} deck is not legal: ${errs[0]}`; return; }
+  const me = $('#p1name').value || 'Player 1';
+  if (!checkDeck($('#p1deck').value, me)) return;
+  const players = [{ name: me, deck: deckFor($('#p1deck').value), human: true }];
+  for (let i = 1; i < count; i++) {
+    const s = seats[i];
+    const name = s.name || (s.type === 'ai' ? `${AI_NAMES[i - 1]} (AI)` : `Player ${i + 1}`);
+    if (!checkDeck(s.deck, name)) return;
+    players.push({ name, deck: deckFor(s.deck), human: s.type === 'human' });
   }
   show('#game');
-  MTG.UI.start({
-    players: [
-      { name: $('#p1name').value || 'Player 1', deck: deckFor(decks[0]), human: true },
-      { name: $('#p2name').value || 'Player 2', deck: deckFor(decks[1]), human: mode === 'hotseat' },
-    ],
-    onExit: () => { show('#menu'); fillDecks(); },
-  });
+  MTG.UI.start({ players, onExit: () => { show('#menu'); fillDecks(); } });
 };
+
 // ---------- online play ----------
 function onlineStatus(html) { $('#onlineStatus').innerHTML = html; }
 function onlineStart(cfg) {
@@ -58,28 +99,34 @@ function onlineStart(cfg) {
   show('#game');
   MTG.UI.start({
     players: cfg.players.map(p => ({ name: p.name, deck: p.deck.slice() })),
-    online: { local: MTG.Net.local, agents: MTG.Net.agents(MTG.UI), seed: cfg.seed },
+    online: { local: MTG.Net.local, agents: MTG.Net.agents(MTG.UI, cfg), seed: cfg.seed, types: cfg.players.map(p => p.type) },
     onExit: () => { show('#menu'); fillDecks(); onlineStatus(''); },
   });
 }
-function onlineDeck() {
+function myOnlineDeck() {
   const d = $('#p1deck').value;
-  const deck = deckFor(d);
-  const errs = MTG.validateDeck(deck);
-  if (errs.length) { onlineStatus('Your deck is not legal: ' + errs[0]); return null; }
-  return deck;
+  if (!checkDeck(d, 'Your')) { onlineStatus($('#menuNote').textContent); return null; }
+  return deckFor(d);
 }
 $('#hostBtn').onclick = () => {
   if (!MTG.Net.available()) return onlineStatus('Online play needs the PeerJS library (js/vendor/peerjs.min.js).');
-  const deck = onlineDeck(); if (!deck) return;
+  const deck = myOnlineDeck(); if (!deck) return;
+  // seat plan: seat 0 is the host; the rest are online players or computers (the host runs the computers)
+  const plan = [{ type: 'host', name: $('#p1name').value || 'Host', deck }];
+  for (let i = 1; i < count; i++) {
+    const s = seats[i];
+    if (s.type === 'ai') { if (!checkDeck(s.deck, s.name || 'Computer')) return; plan.push({ type: 'ai', name: s.name || `${AI_NAMES[i - 1]} (AI)`, deck: deckFor(s.deck) }); }
+    else plan.push({ type: 'online' });
+  }
+  if (!plan.some(s => s.type === 'online')) return onlineStatus('Choose at least one "Online player" seat to host an online game.');
   onlineStatus('Creating room…');
-  MTG.Net.host({ name: $('#p1name').value || 'Host', deck, onStatus: onlineStatus, onStart: onlineStart });
+  MTG.Net.host({ plan, onStatus: onlineStatus, onStart: onlineStart });
 };
 $('#joinBtn').onclick = () => {
   if (!MTG.Net.available()) return onlineStatus('Online play needs the PeerJS library (js/vendor/peerjs.min.js).');
   const code = $('#joinCode').value.trim();
   if (!code) return onlineStatus('Enter the room code from the host.');
-  const deck = onlineDeck(); if (!deck) return;
+  const deck = myOnlineDeck(); if (!deck) return;
   MTG.Net.join({ code, name: $('#p1name').value || 'Guest', deck, onStatus: onlineStatus, onStart: onlineStart });
 };
 
@@ -97,5 +144,5 @@ $('#fullControl').onchange = e => { MTG.UI.settings.fullControl = e.target.check
 const supported = Object.values(MTG.DB).filter(d => d.supported).length;
 $('#menuNote').textContent = `${supported} cards playable: the Urza block plus the extra cards from your spreadsheet decks.`;
 fillDecks();
-setMode('ai');
+setMode('local');
 })();

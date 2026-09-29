@@ -15,11 +15,13 @@ const results = { finished: 0, errors: 0, turnsTotal: 0, stalls: 0 };
     const d1 = pickDeck(cs[0], cs[1]), d2 = pickDeck(cs[2], cs[3]);
     if (only != null && i !== only) continue;
     const logs = [];
-    const g = new M.Game({ seed: seed * 1000 + i, players: [{ name: 'A', deck: d1, agent: new M.AIAgent() }, { name: 'B', deck: d2, agent: new M.AIAgent() }], onLog: m => logs.push(m) });
+    const n = +(process.env.PLAYERS || 2);
+    const decks = [d1, d2]; while (decks.length < n) decks.push(pickDeck(colors[Math.floor(rand() * 5)], colors[Math.floor(rand() * 5)]));
+    const g = new M.Game({ seed: seed * 1000 + i, players: decks.map((d, k) => ({ name: 'ABCD'[k], deck: d, agent: new M.AIAgent() })), onLog: m => logs.push(m) });
     try {
-      const res = await Promise.race([g.start(), new Promise(r => setTimeout(() => r('TIMEOUT'), 20000))]);
+      const res = await Promise.race([g.start(), new Promise(r => setTimeout(() => r('TIMEOUT'), 20000 * (+(process.env.PLAYERS || 2)) / 2))]);
       if (res === 'TIMEOUT') { results.stalls++; g.over = true; console.log(`game ${i}: STALL turn ${g.turn} step ${g.step}`); console.log(logs.slice(-15).join('\n')); }
-      else { results.finished++; results.turnsTotal += g.turn; console.log(`game ${i}: ${cs[0] + cs[1]} vs ${cs[2] + cs[3]} winner ${res == null ? 'draw' : g.pname(res)} in ${g.turn} turns (life ${g.players[0].life}/${g.players[1].life})`); }
+      else { results.finished++; results.turnsTotal += g.turn; console.log(`game ${i}: ${cs[0] + cs[1]} vs ${cs[2] + cs[3]} winner ${res == null ? 'draw' : g.pname(res)} in ${g.turn} turns (life ${g.players.map(p => p.life).join('/')})`); }
       if (process.argv[4] === 'log') console.log(logs.join('\n'));
     } catch (e) {
       results.errors++; g.over = true; console.log(`game ${i}: ERROR turn ${g.turn} step ${g.step}:`, e.stack);

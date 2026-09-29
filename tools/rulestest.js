@@ -160,6 +160,15 @@ test('Dauthi Jackal (shadow) can only be blocked by shadow creatures', async () 
   const g = setup(); const j = put(g, 0, 'Dauthi Jackal'); const c = put(g, 1, 'Giant Cockroach');
   assert(!g.canBlock(c, j), 'non-shadow creature cannot block shadow');
 });
+test('AI never puts a second Pacifism on an already pacified creature', async () => {
+  const g = setup(); lands(g, 0, 'Plains', 4);
+  const raptor = put(g, 1, 'Shivan Raptor'); const pac = put(g, 0, 'Pacifism'); pac.attachedTo = raptor.id; g.bump();
+  const card = hand(g, 0, 'Pacifism'); const ai = new M.AIAgent(); ai._g = g;
+  assert(!ai.planCast(g, 0, card, 'main1'), 'should not cast Pacifism when the only target is already pacified');
+  const other = put(g, 1, 'Yavimaya Wurm');
+  const plan = ai.planCast(g, 0, card, 'main1');
+  assert(plan && plan.intent[0] === other, 'should target the creature that is not pacified');
+});
 
 (async () => {
   let pass = 0;

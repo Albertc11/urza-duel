@@ -14,20 +14,32 @@ Everything is local, so the game works fully offline. Card images are stored in 
 python -m http.server 8321
 ```
 
-## Play online against a friend
+## Players and modes
 
-1. Both players open the game's web address (see **Publishing** below). A local copy works too, as long as both of you have the same version.
-2. On the menu, both pick **Online**, enter a name, and choose a deck.
-3. One player clicks **Create room** and sends the 6-letter room code to the other.
-4. The other player types the code and clicks **Join**. The game starts automatically.
+- **2, 3 or 4 players.** With more than two, it's free-for-all: everyone for themselves, last player standing wins.
+- **Play here:** each other seat is either a **Computer** or a **Human (same screen)** (hotseat, with a pass-the-device screen between players).
+- **Online:** each other seat is either an **Online player** or a **Computer**. Mixes are fine, for example you and a friend against two computers.
+
+In a 3–4 player game:
+- Each attacking creature attacks a player you choose. Click an opponent's portrait to pick the target, then click creatures; each attacker shows "→ Name".
+- Each defending player blocks the creatures attacking them.
+- A player who loses or concedes leaves the game, and all their cards leave with them. The game continues until one player remains.
+- The first player skips their first draw only in 2-player games.
+
+## Play online
+
+1. Everyone opens the game's web address (see **Publishing**) with the same version.
+2. The host picks **Online**, sets the number of players, and sets each other seat to **Online player** or **Computer**. Then they click **Create room** and share the 6-letter code.
+3. Each other player picks **Online**, enters their name and deck, types the code and clicks **Join**. The lobby shows who has joined; the game starts when every online seat is filled.
 
 How it works:
-- The two browsers connect directly (WebRTC, via the free PeerJS service) and each run the same game engine from a shared random seed.
-- Only each player's decisions travel over the connection, and each screen shows only your own hand.
-- Every move carries a check of the game state. If the two copies ever disagree, the game stops with a message instead of carrying on wrongly.
-- After a game, the host can start a rematch.
+- Browsers connect peer-to-peer (WebRTC, via the free PeerJS service). The host connects to up to three guests, relays moves between them, and runs any computer players.
+- Every browser runs the same game engine from a shared random seed, and only players' decisions travel over the connection. You only see your own hand.
+- Every move carries a check of the game state. If the copies ever disagree, the game stops with a message instead of carrying on wrongly.
+- Conceding counts as that player's next decision, so every browser applies it at the same moment. A player who disconnects concedes the same way.
+- After a game the host can start a rematch.
 
-Online play needs internet. A few very strict networks (some corporate or campus ones) block direct browser connections; if joining fails, try a different network.
+Online play needs internet. A few strict networks (some corporate or campus ones) block direct browser connections; if joining fails, try another network, such as a phone hotspot. Each browser holds the whole game in memory, so hidden hands rely on players being honest.
 
 ## What's in it
 
@@ -92,7 +104,8 @@ node tools/sim.js 50
 - `rulestest.js` runs scripted checks of tricky rules (source prevention, Opalescence, Yawgmoth's Will, Taunting Elf, Abundance and more).
 - `cardtest.js` casts and activates every card on a prepared board, then plays turns, and reports any crash or hang. Pass a regex to test only matching cards.
 - `sim.js` runs full AI-vs-AI games with random decks.
-- `locksteptest.js` plays games between two engines joined like an online match and checks they stay identical (`BREAK=1` checks that a mismatch is caught).
+- `locksteptest.js` plays games between engines joined like an online match and checks they stay identical. Use `PLAYERS=3` or `PLAYERS=4` for multiplayer; `BREAK=1` checks that a mismatch is caught.
+- `sim.js` also takes `PLAYERS=3`/`PLAYERS=4`, and `DECKS=regex` to use saved decks.
 - `tournament.js` runs a round-robin between saved decks.
 
 ## Your spreadsheet decks
@@ -109,7 +122,7 @@ It prints every adjustment it made.
 
 ## Publishing
 
-The game is a static site, hosted on GitHub Pages. To publish changes, commit and push to the `main` branch; Pages redeploys in a minute or two.
+The game is a static site, hosted on GitHub Pages. To publish changes, commit and push to the `main` branch; Pages redeploys in a minute or two. When you change any script or the stylesheet, bump the `?v=` number on the tags in `index.html`. Otherwise browsers may keep old copies, and players on different versions can't play online together.
 
 - Card images are included in the repository (`images/`), so the site doesn't depend on Scryfall.
 - `magic.xlsx` is kept out of the repository (`.gitignore`); the decks from it are built into `js/sheetdecks.js`.

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Urza's Duel</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 
@@ -14,17 +14,19 @@
     <h1>Urza's Duel</h1>
     <div class="sub">Magic: The Gathering — Urza's Saga · Legacy · Destiny</div>
     <div class="menu-row"><label>Mode</label>
-      <div class="seg" id="modeSeg"><button data-mode="ai" class="on">vs Computer</button><button data-mode="hotseat">Hotseat</button><button data-mode="online">Online</button></div>
+      <div class="seg" id="modeSeg"><button data-mode="local" class="on">Play here</button><button data-mode="online">Online</button></div>
     </div>
-    <div class="menu-row"><label for="p1name">Player 1</label><input type="text" id="p1name" value="Player 1"></div>
-    <div class="menu-row"><label for="p1deck">Player 1 deck</label><select id="p1deck"></select></div>
-    <div class="menu-row offline-only"><label for="p2name" id="p2label">Opponent</label><input type="text" id="p2name" value="Urza (AI)"></div>
-    <div class="menu-row offline-only"><label for="p2deck">Opponent deck</label><select id="p2deck"></select></div>
+    <div class="menu-row"><label>Players</label>
+      <div class="seg" id="countSeg"><button data-n="2" class="on">2</button><button data-n="3">3</button><button data-n="4">4</button></div>
+    </div>
+    <div class="menu-row"><label for="p1name">Your name</label><input type="text" id="p1name" value="Player 1"></div>
+    <div class="menu-row"><label for="p1deck">Your deck</label><select id="p1deck"></select></div>
+    <div id="seats"></div>
     <div class="online-only hidden">
       <div class="menu-row"><label>Host a game</label><button class="primary" id="hostBtn">Create room</button></div>
-      <div class="menu-row"><label for="joinCode">Join a game</label><div style="display:flex;gap:6px"><input type="text" id="joinCode" placeholder="Room code" maxlength="6" style="flex:1;text-transform:uppercase"><button class="primary" id="joinBtn">Join</button></div></div>
+      <div class="menu-row"><label for="joinCode">Or join one</label><div style="display:flex;gap:6px"><input type="text" id="joinCode" placeholder="Room code" maxlength="6" style="flex:1;text-transform:uppercase"><button class="primary" id="joinBtn">Join</button></div></div>
       <div class="online-status" id="onlineStatus"></div>
-      <div class="menu-note">Each player picks their own deck above. The host shares the room code; the other player types it in.</div>
+      <div class="menu-note">The host sets up the seats and shares the room code. Players who join pick their own name and deck above.</div>
     </div>
     <div class="menu-actions">
       <button class="primary offline-only" id="startBtn">Start Game</button>
@@ -86,20 +88,20 @@
 
 <div id="overlayRoot"></div>
 
-<script src="js/carddata.js"></script>
-<script src="js/carddata-extra.js"></script>
-<script src="js/images.js"></script>
-<script src="js/engine.js"></script>
-<script src="js/cards.js"></script>
-<script src="js/cards2.js"></script>
-<script src="js/cards3.js"></script>
-<script src="js/ai.js"></script>
-<script src="js/sheetdecks.js"></script>
-<script src="js/decks.js"></script>
-<script src="js/vendor/peerjs.min.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/net.js"></script>
-<script src="js/builder.js"></script>
-<script src="js/main.js"></script>
+<script src="js/carddata.js?v=6"></script>
+<script src="js/carddata-extra.js?v=6"></script>
+<script src="js/images.js?v=6"></script>
+<script src="js/engine.js?v=6"></script>
+<script src="js/cards.js?v=6"></script>
+<script src="js/cards2.js?v=6"></script>
+<script src="js/cards3.js?v=6"></script>
+<script src="js/ai.js?v=6"></script>
+<script src="js/sheetdecks.js?v=6"></script>
+<script src="js/decks.js?v=6"></script>
+<script src="js/vendor/peerjs.min.js?v=6"></script>
+<script src="js/ui.js?v=6"></script>
+<script src="js/net.js?v=6"></script>
+<script src="js/builder.js?v=6"></script>
+<script src="js/main.js?v=6"></script>
 </body>
 </html>

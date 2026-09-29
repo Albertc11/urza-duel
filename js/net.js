@@ -1,9 +1,10 @@
-// Online play: two browsers run the same deterministic engine from the same seed (lockstep) and exchange
-// only each player's decisions over a peer-to-peer connection (PeerJS / WebRTC).
+// Online play: every browser runs the same deterministic engine from the same seed (lockstep) and only
+// players' decisions are exchanged. The host connects to up to three guests (PeerJS / WebRTC), relays each
+// guest's decisions to the others, and runs any computer players itself.
 (function () {
 'use strict';
 const MTG = window.MTG;
-const PROTOCOL = 'urza-duel-1';
+const PROTOCOL = 'urza-duel-2';
 const ID_PREFIX = 'urzaduel-';
 
 // ---------- encoding decisions as object ids ----------
@@ -31,7 +32,7 @@ function dec(g, x) {
   if (x.pl != null) return { player: x.pl };
   return x;
 }
-// map decoded values onto the exact candidate objects of the request (engine compares by identity)
+// map decoded values onto the exact candidate objects of the request (the engine compares by identity)
 function matchCandidates(req, v) {
   const pool = req.candidates || req.cards;
   if (!pool) return v;
@@ -61,29 +62,31 @@ function decAction(g, p, x) {
   return g.legalActions(p).find(a => a.type === x.type && (x.card == null || (a.card && a.card.id === x.card)) &&
     (x.obj == null || (a.obj && a.obj.id === x.obj)) && (x.idx == null || a.idx === x.idx)) || null;
 }
-// cheap fingerprint of the public game state; both sides compare it at every decision
+// cheap fingerprint of the public game state; every client compares it at every decision
 function stateHash(g) {
   const bf = g.battlefield.map(o => o.id + (o.tapped ? 't' : '') + (o.damage || '')).join(',');
-  const pl = g.players.map(p => [p.life, p.hand.length, p.library.length, p.graveyard.length].join('.')).join('|');
+  const pl = g.players.map(p => [p.life, p.hand.length, p.library.length, p.graveyard.length, p.lost ? 'x' : ''].join('.')).join('|');
   return [g.turn, g.step, g.nextId, g.stack.length, pl, bf].join('#');
 }
 
 // ---------- agents ----------
+// A seat decided on this machine (the local human, or a computer run by the host): decide, then broadcast.
 class LocalNetAgent {
-  constructor(net, human, idx) { this.net = net; this.human = human; this.idx = idx; this.isHuman = true; }
+  constructor(net, inner, idx) { this.net = net; this.inner = inner; this.idx = idx; this.isHuman = !!inner.isHuman; }
   async getAction(g, p) {
     const h = stateHash(g);
-    const a = await this.human.getAction(g, p);
+    const a = await this.inner.getAction(g, p);
     this.net.send({ t: 'd', k: 'a', p, v: encAction(g, p, a), h });
     return a;
   }
   async choose(g, p, req) {
     const h = stateHash(g);
-    const v = await this.human.choose(g, p, req);
+    const v = await this.inner.choose(g, p, req);
     this.net.send({ t: 'd', k: 'c', p, v: enc(v), h });
     return v;
   }
 }
+// A seat decided on another machine: wait for its next decision.
 class RemoteNetAgent {
   constructor(net, idx) { this.net = net; this.idx = idx; this.isRemote = true; }
   async next(g, kind) {
@@ -91,7 +94,9 @@ class RemoteNetAgent {
     const h = stateHash(g);
     const msg = await this.net.take(this.idx);
     if (!msg) return null; // game ended
-    if (msg.k !== kind || msg.h !== h) { this.net.desync(`expected ${kind}, state ${h} vs ${msg.h}`); return null; }
+    // a forced concede (player disconnected) is applied at that seat's next priority, identically everywhere
+    if (msg.forced) { if (kind === 'a') return msg; (this.net.inbox[this.idx] || (this.net.inbox[this.idx] = [])).unshift(msg); return null; }
+    if (msg.k !== kind || msg.h !== h) { this.net.desync(`seat ${this.idx}: expected ${kind}, state ${h} vs ${msg.h}`); return null; }
     return msg;
   }
   async getAction(g, p) {
@@ -110,102 +115,150 @@ class RemoteNetAgent {
 
 // ---------- connection ----------
 const Net = MTG.Net = {
-  peer: null, conn: null, role: null, local: 0, inbox: [[], []], waiters: [null, null], onStatus: () => {}, active: false,
+  peer: null, role: null, local: 0, hostConn: null, seatConns: {}, plan: null,
+  inbox: {}, waiters: {}, onStatus: () => {}, active: false,
   code() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 6; i++) s += a[Math.floor(Math.random() * a.length)]; return s; },
   available() { return typeof window.Peer === 'function'; },
+  get conn() { return this.role === 'host' ? Object.values(this.seatConns)[0] || null : this.hostConn; },
   reset() {
-    try { if (this.conn) this.conn.close(); } catch (e) {}
+    for (const c of Object.values(this.seatConns)) try { c.close(); } catch (e) {}
+    try { if (this.hostConn) this.hostConn.close(); } catch (e) {}
     try { if (this.peer) this.peer.destroy(); } catch (e) {}
-    this.peer = null; this.conn = null; this.active = false; this.inbox = [[], []]; this.waiters = [null, null];
+    this.peer = null; this.hostConn = null; this.seatConns = {}; this.active = false; this.inbox = {}; this.waiters = {};
   },
-  send(msg) { if (this.conn && this.conn.open) this.conn.send(msg); },
+  // host: to every guest (optionally skipping one); guest: to the host
+  send(msg, except) {
+    if (this.role === 'host') { for (const [seat, c] of Object.entries(this.seatConns)) if (+seat !== except && c.open) c.send(msg); }
+    else if (this.hostConn && this.hostConn.open) this.hostConn.send(msg);
+  },
   take(idx) {
-    if (this.inbox[idx].length) return Promise.resolve(this.inbox[idx].shift());
+    const q = this.inbox[idx] || (this.inbox[idx] = []);
+    if (q.length) return Promise.resolve(q.shift());
     return new Promise(res => { this.waiters[idx] = res; });
   },
   deliver(msg) {
     const i = msg.p;
-    if (this.waiters[i]) { const w = this.waiters[i]; this.waiters[i] = null; w(msg); } else this.inbox[i].push(msg);
+    if (this.waiters[i]) { const w = this.waiters[i]; this.waiters[i] = null; w(msg); } else (this.inbox[i] || (this.inbox[i] = [])).push(msg);
   },
-  releaseWaiters() { for (let i = 0; i < 2; i++) if (this.waiters[i]) { const w = this.waiters[i]; this.waiters[i] = null; w(null); } },
-  // The two engines disagree: stop the game on this side with a clear message rather than play on garbage.
+  release(idx) { if (this.waiters[idx]) { const w = this.waiters[idx]; this.waiters[idx] = null; w(null); } },
+  releaseWaiters() { for (const k of Object.keys(this.waiters)) this.release(+k); },
+  // The engines disagree: stop the game here with a clear message rather than play on garbage.
   desync(why) {
     console.error('DESYNC', why);
     this.broken = true;
     const g = MTG.UI.g;
     if (!this._desyncShown) {
       this._desyncShown = true;
-      MTG.UI.toast('The two games went out of sync, so this game was stopped. Please start a new one.');
-      if (g && !g.over) { g.say('Game stopped: out of sync with the opponent.'); g.over = true; this.releaseWaiters(); if (MTG.UI.gameOver) setTimeout(() => MTG.UI.gameOver(), 0); }
+      MTG.UI.toast('The games went out of sync, so this game was stopped. Please start a new one.');
+      if (g && !g.over) { g.say('Game stopped: out of sync with the other players.'); g.over = true; this.releaseWaiters(); if (MTG.UI.gameOver) setTimeout(() => MTG.UI.gameOver(), 0); }
     }
   },
 
-  // Host: open a room and wait for a guest. opts: {name, deck, onStatus, onStart}
+  // Host: open a room. opts: {plan: [{type:'host'|'online'|'ai', name?, deck?}], onStatus, onStart}
   host(opts) {
     this.reset(); this.role = 'host'; this.local = 0; this.onStatus = opts.onStatus; this.opts = opts;
+    this.plan = opts.plan.map(s => Object.assign({}, s));
     const code = this.code();
+    this.roomCode = code;
     this.peer = new window.Peer(ID_PREFIX + code, { debug: 1 });
-    this.peer.on('open', () => this.onStatus(`Room code: <b>${code}</b> — send this to your opponent. Waiting for them to join…`, code));
+    this.peer.on('open', () => this.lobbyStatus());
     this.peer.on('error', e => this.onStatus('Connection error: ' + (e.type || e.message)));
     this.peer.on('connection', conn => {
-      if (this.conn) { conn.on('open', () => { conn.send({ t: 'full' }); conn.close(); }); return; }
-      this.conn = conn;
-      conn.on('data', m => this.onData(m));
-      conn.on('close', () => this.onClose());
+      conn.on('data', m => this.onHostData(conn, m));
+      conn.on('close', () => this.onGuestClose(conn));
     });
   },
+  openSeats() { return this.plan.map((s, i) => i).filter(i => this.plan[i].type === 'online' && !this.seatConns[i]); },
+  lobbyStatus() {
+    const rows = this.plan.map((s, i) => {
+      const who = s.type === 'host' ? `${s.name} (you)` : s.type === 'ai' ? `${s.name} (computer)` : this.seatConns[i] ? `${s.name} ✓` : '<i>waiting…</i>';
+      return `Seat ${i + 1}: ${who}`;
+    }).join('<br>');
+    this.onStatus(`Room code: <b>${this.roomCode}</b> — send this to the other players.<br>${rows}`);
+  },
+  onHostData(conn, m) {
+    if (!m || !m.t) return;
+    const seat = Object.keys(this.seatConns).find(k => this.seatConns[k] === conn);
+    if (m.t === 'hello' && seat == null) {
+      if (this.active) { conn.send({ t: 'error', msg: 'That game has already started.' }); return; }
+      if (m.v !== PROTOCOL) { conn.send({ t: 'error', msg: 'Game versions differ — everyone needs the same version (reload the page).' }); return; }
+      const errs = MTG.validateDeck(m.deck || []);
+      if (errs.length) { conn.send({ t: 'error', msg: 'Your deck is not legal: ' + errs[0] }); return; }
+      const free = this.openSeats();
+      if (!free.length) { conn.send({ t: 'full' }); return; }
+      const s = free[0];
+      this.seatConns[s] = conn; this.plan[s].name = m.name || `Player ${s + 1}`; this.plan[s].deck = m.deck;
+      conn.send({ t: 'lobby', msg: `Joined as seat ${s + 1}. Waiting for the other players…` });
+      this.lobbyStatus();
+      if (!this.openSeats().length) this.beginHosted();
+      return;
+    }
+    if (seat == null) return;
+    if (m.t === 'd' && m.p === +seat) { this.deliver(m); this.send(m, +seat); }
+  },
+  beginHosted() {
+    const cfg = { seed: (Math.random() * 0xffffffff) >>> 0, players: this.plan.map(s => ({ name: s.name, deck: s.deck, type: s.type })) };
+    for (const [seat, c] of Object.entries(this.seatConns)) c.send({ t: 'start', cfg, seat: +seat });
+    this.onStatus('All players joined. Starting…');
+    this.startGame(cfg);
+  },
+  onGuestClose(conn) {
+    const seat = Object.keys(this.seatConns).find(k => this.seatConns[k] === conn);
+    if (seat == null) return;
+    delete this.seatConns[seat];
+    if (!this.active) { this.lobbyStatus(); return; }
+    // a player who disconnects mid-game concedes at their next priority; everyone else gets the same decision
+    const p = +seat;
+    MTG.UI.toast(`${this.cfg.players[p].name} disconnected and will concede.`);
+    const msg = { t: 'd', k: 'a', p, v: { type: 'concede' }, forced: true };
+    this.deliver(msg); this.send(msg);
+  },
+
   // Guest: join a room by code. opts: {code, name, deck, onStatus, onStart}
   join(opts) {
-    this.reset(); this.role = 'guest'; this.local = 1; this.onStatus = opts.onStatus; this.opts = opts;
+    this.reset(); this.role = 'guest'; this.onStatus = opts.onStatus; this.opts = opts;
     const code = (opts.code || '').trim().toUpperCase();
     this.peer = new window.Peer({ debug: 1 });
     this.peer.on('error', e => this.onStatus('Connection error: ' + (e.type === 'peer-unavailable' ? 'no room with that code' : (e.type || e.message))));
     this.peer.on('open', () => {
       this.onStatus('Connecting to room ' + code + '…');
       const conn = this.peer.connect(ID_PREFIX + code, { reliable: true });
-      this.conn = conn;
-      conn.on('open', () => { this.onStatus('Connected. Waiting for the host to start…'); conn.send({ t: 'hello', v: PROTOCOL, name: opts.name, deck: opts.deck }); });
-      conn.on('data', m => this.onData(m));
-      conn.on('close', () => this.onClose());
+      this.hostConn = conn;
+      conn.on('open', () => { this.onStatus('Connected. Waiting for the host…'); conn.send({ t: 'hello', v: PROTOCOL, name: opts.name, deck: opts.deck }); });
+      conn.on('data', m => this.onGuestData(m));
+      conn.on('close', () => this.onHostClose());
     });
   },
+  onGuestData(m) {
+    if (!m || !m.t) return;
+    if (m.t === 'full') return this.onStatus('That room is already full.');
+    if (m.t === 'error' || m.t === 'lobby') return this.onStatus(m.msg);
+    if (m.t === 'start') { this.local = m.seat; return this.startGame(m.cfg); }
+    if (m.t === 'd') return this.deliver(m);
+  },
+  onHostClose() {
+    const g = MTG.UI.g;
+    if (this.active && g && !g.over) { MTG.UI.toast('The host disconnected, so the game ended.'); g.say('The host disconnected.'); g.over = true; g.winner = null; this.releaseWaiters(); MTG.UI.gameOver(); }
+    this.onStatus('Disconnected.');
+    this.hostConn = null; this.active = false;
+  },
+
   startGame(cfg) {
-    this.inbox = [[], []]; this.waiters = [null, null]; this._desyncShown = false; this.broken = false; this.active = true; this.cfg = cfg;
+    this.inbox = {}; this.waiters = {}; this._desyncShown = false; this.broken = false; this.active = true; this.cfg = cfg;
     this.opts.onStart(cfg);
   },
   rematch() {
-    if (this.role !== 'host' || !this.conn) return;
+    if (this.role !== 'host' || !this.cfg) return;
     const cfg = Object.assign({}, this.cfg, { seed: (Math.random() * 0xffffffff) >>> 0 });
-    this.send({ t: 'start', cfg });
+    for (const [seat, c] of Object.entries(this.seatConns)) if (c.open) c.send({ t: 'start', cfg, seat: +seat });
     this.startGame(cfg);
   },
-  onData(m) {
-    if (!m || !m.t) return;
-    if (m.t === 'full') return this.onStatus('That room already has two players.');
-    if (m.t === 'hello' && this.role === 'host') {
-      if (m.v !== PROTOCOL) { this.send({ t: 'error', msg: 'Game versions differ — both players need the same version.' }); return; }
-      const errs = MTG.validateDeck(m.deck || []);
-      if (errs.length) { this.send({ t: 'error', msg: 'Your deck is not legal: ' + errs[0] }); return; }
-      const cfg = { seed: (Math.random() * 0xffffffff) >>> 0, players: [{ name: this.opts.name, deck: this.opts.deck }, { name: m.name || 'Guest', deck: m.deck }] };
-      this.onStatus(`${m.name || 'Guest'} joined. Starting…`);
-      this.send({ t: 'start', cfg });
-      return this.startGame(cfg);
-    }
-    if (m.t === 'start' && this.role === 'guest') return this.startGame(m.cfg);
-    if (m.t === 'error') return this.onStatus(m.msg);
-    if (m.t === 'd') return this.deliver(m);
-    if (m.t === 'concede') { const g = MTG.UI.g; if (g && !g.over) { g.say(`${g.pname(m.p)} concedes.`); g.players[m.p].lost = true; g.over = true; g.winner = 1 - m.p; this.releaseWaiters(); MTG.UI.gameOver(); } }
-  },
-  onClose() {
-    const g = MTG.UI.g;
-    if (this.active && g && !g.over) { MTG.UI.toast('Your opponent disconnected.'); g.say('Opponent disconnected.'); g.over = true; g.winner = this.local; this.releaseWaiters(); MTG.UI.gameOver(); }
-    this.onStatus('Disconnected.');
-    this.conn = null; this.active = false;
-  },
-  agents(ui) {
-    const local = new LocalNetAgent(this, new MTG.HumanAgent(ui, this.local), this.local);
-    const remote = new RemoteNetAgent(this, 1 - this.local);
-    return this.local === 0 ? [local, remote] : [remote, local];
+  agents(ui, cfg) {
+    return cfg.players.map((pl, i) => {
+      if (i === this.local) return new LocalNetAgent(this, new MTG.HumanAgent(ui, i), i);
+      if (this.role === 'host' && pl.type === 'ai') { const ai = new MTG.AIAgent(); ai.delay = 380; return new LocalNetAgent(this, ai, i); }
+      return new RemoteNetAgent(this, i);
+    });
   },
 };
 MTG.NetInternals = { enc, dec, encAction, decAction, stateHash, matchCandidates, LocalNetAgent, RemoteNetAgent };

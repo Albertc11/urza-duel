@@ -12,6 +12,15 @@ const uidOf = o => o.uid || o.id;
 const COLOR_WORD = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
 
 // ---------- helpers ----------
+// "more lands than each other player"
+const mostLands = (g, p) => { const n = q => g.perms(q, o => g.is(o, 'Land')).length; return g.opps(p).every(q => n(p) > n(q)); };
+// choose one of your opponents (automatic when there is only one)
+async function chooseOpponent(g, p, prompt) {
+  const opps = g.opps(p);
+  if (opps.length <= 1) return opps[0];
+  const pick = await g.ask(p, { type: 'target', prompt, candidates: opps.map(q => ({ player: q })), optional: false, harm: true, notTarget: true, reason: 'opponent' });
+  return pick ? pick.player : opps[0];
+}
 // "you may put a <kind> counter on this" at the beginning of your upkeep
 const mayCounter = kind => myUpkeep({ optional: true, optionalPrompt: `Put a ${kind} counter on it`, text: `${kind} counter`, ai: { counter: true },
   resolve: (g, ctx) => g.alive(src(ctx)) && g.addCounters(src(ctx), kind, 1) });
@@ -116,7 +125,7 @@ I['Planar Collapse'] = { triggers: [myUpkeep({ iff: g => g.creatures().length >=
 I['Radiant, Archangel'] = { statics: (g, o) => [{ layer: 'ptmod', target: o, apply: ch => { const n = g.creatures().filter(x => x !== o && g.c(x).keywords.has('flying')).length; ch.power += n; ch.toughness += n; } }] };
 I['Defensive Formation'] = {}; // combat damage assignment handled in the engine
 I['Faith Healer'] = { abilities: [{ cost: { sac: { filter: (g, o) => g.is(o, 'Enchantment'), prompt: 'Sacrifice an enchantment' } }, text: 'Gain life equal to its mana value', ai: { never: true }, resolve: (g, ctx) => g.gainLife(ctx.controller, ctx.sacrificed.chars.cmc || 0) }] };
-I['Planar Birth'] = { spell: { resolve: g => { for (const p of [0, 1]) for (const c of g.players[p].graveyard.filter(c => c.def.supertypes.includes('Basic') && c.def.types.includes('Land'))) g.moveTo(c, 'battlefield', { controller: p, tapped: true }); } }, ai: 'none' };
+I['Planar Birth'] = { spell: { resolve: g => { for (const p of g.livePlayers()) for (const c of g.players[p].graveyard.filter(c => c.def.supertypes.includes('Basic') && c.def.types.includes('Land'))) g.moveTo(c, 'battlefield', { controller: p, tapped: true }); } }, ai: 'none' };
 I['Presence of the Master'] = { triggers: [{ on: 'cast', when: (g, s, ev) => ev.card.def.types.includes('Enchantment'), text: 'counter that enchantment spell', resolve: (g, ctx) => g.counterItem(ctx.ev.item) }] };
 I['Remembrance'] = { triggers: [{ on: 'dies', when: (g, s, ev) => ev.obj.controller === g.ctrl(s) && !ev.obj.isToken && ev.obj.id !== s.id, optional: true, optionalPrompt: 'Search for a card with the same name', text: 'search for a card with the same name',
   resolve: (g, ctx) => tutorTo(g, ctx.controller, c => c.def.name === ctx.ev.obj.def.name, `Search for ${ctx.ev.obj.def.name}`, 'hand') }] };
@@ -232,8 +241,8 @@ I['Spire Owl'] = { triggers: [etb({ text: 'look at the top four cards and reorde
 I['Sunder'] = { spell: { resolve: g => g.battlefield.filter(o => g.is(o, 'Land')).forEach(o => g.bounce(o)) }, ai: 'none' };
 I['Telepathy'] = { revealsOpponentHand: true };
 I['Time Spiral'] = { spell: { exileSelf: true, resolve: async (g, ctx) => {
-  for (const p of [0, 1]) { const pl = g.players[p]; for (const c of [...pl.hand, ...pl.graveyard]) g.moveTo(c, 'library'); g.shuffleLib(p); }
-  for (const p of [g.active, 1 - g.active]) await g.draw(p, 7);
+  for (const p of g.livePlayers()) { const pl = g.players[p]; for (const c of [...pl.hand, ...pl.graveyard]) g.moveTo(c, 'library'); g.shuffleLib(p); }
+  for (const p of g.apnap()) await g.draw(p, 7);
   await untapLands(g, ctx.controller, 6);
 } }, ai: 'none' };
 I['Turnabout'] = { spell: { targets: [T.player()], resolve: async (g, ctx) => {
@@ -249,8 +258,7 @@ I['Veiled Crocodile'] = { stateTriggers: [{ check: (g, o) => g.is(o, 'Enchantmen
   resolve: (g, ctx) => { if (g.alive(src(ctx)) && g.is(src(ctx), 'Enchantment')) becomeCreature(g, src(ctx), [4, 4], ['Crocodile']); } }] };
 I['Veiled Sentry'] = { triggers: [{ on: 'cast', when: (g, s, ev) => ev.player !== g.ctrl(s), iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes an Illusion with P/T equal to that spell\'s mana value',
   resolve: (g, ctx) => { const n = ctx.ev.card.def.cmc; if (g.alive(src(ctx))) becomeCreature(g, src(ctx), [n, n], ['Illusion']); } }] };
-I['Veiled Serpent'] = Object.assign(becomesOn((g, ev) => true, [4, 4], ['Serpent']), { attackRestriction: (g, o) => !g.perms(1 - g.ctrl(o), x => g.c(x).subtypes.has('Island')).length ? 'Veiled Serpent can\'t attack unless the defending player controls an Island.' : null,
-  mustNotAttack: (g, o) => !g.perms(1 - g.ctrl(o), x => g.c(x).subtypes.has('Island')).length });
+I['Veiled Serpent'] = Object.assign(becomesOn((g, ev) => true, [4, 4], ['Serpent']), { attackRestriction: (g, o, chosen, targets) => { const d = targets && targets.has(o) ? targets.get(o) : g.opp(g.ctrl(o)); return !g.perms(d, x => g.c(x).subtypes.has('Island')).length ? 'Veiled Serpent can\'t attack a player who doesn\'t control an Island.' : null; } });
 I['Wizard Mentor'] = { abilities: [{ tap: true, text: 'Return this and target creature you control to hand', targets: [T.friendlyCreature({ filter: (g, o, ctx) => g.ctrl(o) === ctx.controller, prompt: 'Choose target creature you control' })], ai: { never: true },
   resolve: (g, ctx) => { if (g.alive(src(ctx))) g.bounce(src(ctx)); if (t0(ctx)) g.bounce(t0(ctx)); } }] };
 
@@ -272,13 +280,10 @@ I['Bubbling Muck'] = { spell: { resolve: g => { g.flags.bubblingMuck = true; } }
 I['Carnival of Souls'] = { triggers: [{ on: 'etb', when: (g, s, ev) => g.isCreature(ev.obj), text: 'lose 1 life and add {B}', resolve: (g, ctx) => { g.loseLife(ctx.controller, 1); g.addMana(ctx.controller, mana({ B: 1 })); } }] };
 I['Chime of Night'] = { triggers: [K.ltbGraveyard({ text: 'destroy target nonblack creature', targets: [T.creature({ filter: isNonblack })], resolve: (g, ctx) => g.destroy(t0(ctx)) })] };
 I['Dying Wail'] = { triggers: [enchantedDies({ text: 'target player discards two cards', targets: [T.player({ harm: true })], resolve: (g, ctx) => g.chooseDiscard(t0(ctx).player, 2) })] };
-I['Encroach'] = { spell: { targets: [T.player({ harm: true })], resolve: async (g, ctx) => {
-  const p = t0(ctx).player, hand = g.players[p].hand; await reveal(g, ctx.controller, hand, 'Their hand');
-  const [pick] = await g.chooseCards(ctx.controller, hand.filter(c => c.def.types.includes('Land') && !c.def.supertypes.includes('Basic')), 'Choose a nonbasic land card to discard', 1, 1, 'oppDiscard');
-  if (pick) await g.discard(p, pick); } }, ai: 'none' };
+I['Encroach'] = { spell: { targets: [T.player({ harm: true })], resolve: (g, ctx) => K.revealAndChoose(g, ctx, t0(ctx).player, c => c.def.types.includes('Land') && !c.def.supertypes.includes('Basic'), 'nonbasic land card') }, ai: 'none' };
 I['Festering Wound'] = { harm: true, triggers: [mayCounter('infection'), enchantedUpkeep({ text: 'damage equal to infection counters to that player',
   resolve: (g, ctx) => { const h = g.attachedTo(src(ctx)); if (h) g.dealDamage(src(ctx), { player: g.ctrl(h) }, ctr(src(ctx), 'infection')); } })] };
-I['Lurking Jackals'] = { stateTriggers: [{ check: (g, o) => g.is(o, 'Enchantment') && g.players[1 - g.ctrl(o)].life <= 10, iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes a 3/2 Jackal',
+I['Lurking Jackals'] = { stateTriggers: [{ check: (g, o) => g.is(o, 'Enchantment') && g.opps(g.ctrl(o)).some(q => g.players[q].life <= 10), iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes a 3/2 Jackal',
   resolve: (g, ctx) => { if (g.alive(src(ctx)) && g.is(src(ctx), 'Enchantment')) becomeCreature(g, src(ctx), [3, 2], ['Jackal']); } }] };
 I['Nightshade Seer'] = { abilities: [{ tap: true, cost: { mana: '{2}{B}' }, text: 'Reveal black cards: target creature gets -X/-X', targets: [T.creature()], ai: { never: true },
   resolve: async (g, ctx) => { const n = await revealColor(g, ctx.controller, 'B'); g.pump(t0(ctx), -n, -n); } }] };
@@ -310,8 +315,8 @@ I['Discordant Dirge'] = { triggers: [mayCounter('verse')], abilities: [verseSac(
 I['Flesh Reaver'] = { triggers: [{ on: 'dealtDamage', when: (g, s, ev) => ev.src && ev.src.id === s.id && (ev.target.player != null ? ev.target.player !== g.ctrl(s) : g.isCreature(ev.target)), text: 'deals that much damage to you',
   resolve: (g, ctx) => g.dealDamage(src(ctx), { player: ctx.controller }, ctx.ev.amount) }] };
 I['Ill-Gotten Gains'] = { spell: { exileSelf: true, resolve: async g => {
-  for (const p of [g.active, 1 - g.active]) await g.chooseDiscard(p, g.players[p].hand.length);
-  for (const p of [g.active, 1 - g.active]) { const gy = g.players[p].graveyard; const picks = await g.chooseCards(p, gy.slice(), 'Return up to three cards from your graveyard to your hand', 0, Math.min(3, gy.length), 'regrow'); picks.forEach(c => g.moveTo(c, 'hand')); }
+  for (const p of g.apnap()) await g.chooseDiscard(p, g.players[p].hand.length);
+  for (const p of g.apnap()) { const gy = g.players[p].graveyard; const picks = await g.chooseCards(p, gy.slice(), 'Return up to three cards from your graveyard to your hand', 0, Math.min(3, gy.length), 'regrow'); picks.forEach(c => g.moveTo(c, 'hand')); }
 } }, ai: 'none' };
 I['Lurking Evil'] = { abilities: [{ cost: { life: (g, p) => Math.ceil(g.players[p].life / 2) }, text: 'Becomes a 4/4 flying Horror', cond: (g, o) => !g.isCreature(o), ai: { never: true },
   resolve: (g, ctx) => { if (g.alive(src(ctx))) becomeCreature(g, src(ctx), [4, 4], ['Phyrexian', 'Horror'], { keywords: ['flying'] }); } }] };
@@ -343,7 +348,7 @@ I['Victimize'] = { spell: { targets: [T.gyCreature({ count: 2, prompt: 'Choose t
 } }, ai: 'none' };
 I['Vile Requiem'] = { triggers: [mayCounter('verse')], abilities: [verseSac('{1}{B}', 'Destroy up to X target nonblack creatures', [T.creature({ filter: isNonblack, count: ctx => ctx.x, upTo: true })], (g, ctx) => (t0(ctx) || []).forEach(o => o && g.destroy(o, { noRegen: true })))] };
 I['Witch Engine'] = { manaAbilities: [{ tap: true, auto: false, label: 'Add {B}{B}{B}{B}; an opponent gains control of it', options: () => [mana({ B: 4 })],
-  produce: async (g, o, p) => { g.addMana(p, mana({ B: 4 })); g.gainControl(o, 1 - p); g.say(`${g.pname(1 - p)} gains control of Witch Engine.`); } }] };
+  produce: async (g, o, p) => { g.addMana(p, mana({ B: 4 })); const q = await chooseOpponent(g, p, 'Witch Engine: which opponent gains control of it?'); if (q != null) g.gainControl(o, q); } }] };
 I['Yawgmoth\'s Edict'] = { triggers: [{ on: 'cast', when: (g, s, ev) => ev.player !== g.ctrl(s) && ev.card.def.colors.includes('W'), text: 'drain 1', resolve: (g, ctx) => { g.loseLife(ctx.ev.player, 1); g.gainLife(ctx.controller, 1); } }] };
 I['Yawgmoth\'s Will'] = { spell: { resolve: (g, ctx) => { g.players[ctx.controller].yawgTurn = g.turn; g.say('You may play cards from your graveyard this turn.'); } }, ai: 'none' };
 
@@ -355,7 +360,7 @@ I['Cinder Seer'] = { abilities: [{ tap: true, cost: { mana: '{2}{R}' }, text: 'R
   resolve: async (g, ctx) => g.dealDamage(src(ctx), t0(ctx), await revealColor(g, ctx.controller, 'R')) }] };
 I['Scent of Cinder'] = { spell: { targets: [T.any()], resolve: async (g, ctx) => g.dealDamage(ctx.card, t0(ctx), await revealColor(g, ctx.controller, 'R')) }, ai: 'none' };
 I['Goblin Festival'] = { abilities: [{ cost: { mana: '{2}' }, text: '1 damage to any target, then flip a coin', targets: [T.any()], ai: { never: true },
-  resolve: (g, ctx) => { g.dealDamage(src(ctx), t0(ctx), 1); const win = g.flip(); g.say(`Coin flip: ${win ? 'won' : 'lost'}.`); if (!win && g.alive(src(ctx))) g.gainControl(src(ctx), 1 - ctx.controller); } }] };
+  resolve: async (g, ctx) => { g.dealDamage(src(ctx), t0(ctx), 1); const win = g.flip(); g.say(`Coin flip: ${win ? 'won' : 'lost'}.`); if (!win && g.alive(src(ctx))) { const q = await chooseOpponent(g, ctx.controller, 'Goblin Festival: which opponent gains control of it?'); if (q != null) g.gainControl(src(ctx), q); } } }] };
 I['Impatience'] = { triggers: [endStep({ iff: g => g.players[g.active].spellsCast === 0, text: '2 damage to that player (cast no spells)', resolve: (g, ctx) => g.players[g.active].spellsCast === 0 && g.dealDamage(src(ctx), { player: g.active }, 2) })] };
 I['Incendiary'] = { triggers: [mayCounter('fuse'), enchantedDies({ text: 'X damage to any target', targets: [T.any()], resolve: (g, ctx) => g.dealDamage(src(ctx), t0(ctx), ctr(src(ctx), 'fuse')) })] };
 I['Landslide'] = { spell: { targets: [T.player({ harm: true })], resolve: async (g, ctx) => { const n = await sacrificeAny(g, ctx.controller, (g2, o) => g2.c(o).subtypes.has('Mountain'), 'Sacrifice any number of Mountains'); g.dealDamage(ctx.card, t0(ctx), n); } }, ai: 'none' };
@@ -369,11 +374,11 @@ I['Goblin Welder'] = { abilities: [{ tap: true, text: 'Swap an artifact with an 
 I['Impending Disaster'] = { triggers: [myUpkeep({ iff: g => g.battlefield.filter(o => g.is(o, 'Land')).length >= 7, text: 'sacrifice it and destroy all lands', resolve: (g, ctx) => { if (!g.alive(src(ctx))) return; g.sacrifice(src(ctx)); g.destroyAll(g.battlefield.filter(o => g.is(o, 'Land'))); } })] };
 I['Last-Ditch Effort'] = { spell: { targets: [T.any()], resolve: async (g, ctx) => { const n = await sacrificeAny(g, ctx.controller, (g2, o) => g2.isCreature(o), 'Sacrifice any number of creatures'); g.dealDamage(ctx.card, t0(ctx), n); } }, ai: 'none' };
 I['Pyromancy'] = { abilities: [{ cost: { mana: '{3}', discard: { random: true } }, text: 'Damage equal to the discarded card\'s mana value', targets: [T.any()], ai: { never: true }, resolve: (g, ctx) => g.dealDamage(src(ctx), t0(ctx), ctx.discarded ? ctx.discarded.def.cmc : 0) }] };
-I['Rivalry'] = { triggers: [eachUpkeep({ iff: g => { const n = p => g.perms(p, o => g.is(o, 'Land')).length; return n(g.active) > n(1 - g.active); }, text: '2 damage (most lands)', resolve: (g, ctx) => g.dealDamage(src(ctx), { player: g.active }, 2) })] };
+I['Rivalry'] = { triggers: [eachUpkeep({ iff: g => mostLands(g, g.active), text: '2 damage (most lands)', resolve: (g, ctx) => g.dealDamage(src(ctx), { player: g.active }, 2) })] };
 I['Viashino Bey'] = { allMustAttack: true };
 I['Viashino Heretic'] = { abilities: [{ tap: true, cost: { mana: '{1}{R}' }, text: 'Destroy target artifact; damage to its controller equal to its mana value', targets: [T.artifact()], ai: { removal: true },
   resolve: (g, ctx) => { const a = t0(ctx); const p = g.ctrl(a), n = g.c(a).cmc; g.destroy(a); g.dealDamage(src(ctx), { player: p }, n); } }] };
-I['Antagonism'] = { triggers: [endStep({ iff: g => !g.players[1 - g.active].damagedThisTurn, text: '2 damage unless an opponent was dealt damage this turn', resolve: (g, ctx) => !g.players[1 - g.active].damagedThisTurn && g.dealDamage(src(ctx), { player: g.active }, 2) })] };
+I['Antagonism'] = { triggers: [endStep({ iff: g => !g.opps(g.active).some(q => g.players[q].damagedThisTurn), text: '2 damage unless an opponent was dealt damage this turn', resolve: (g, ctx) => !g.opps(g.active).some(q => g.players[q].damagedThisTurn) && g.dealDamage(src(ctx), { player: g.active }, 2) })] };
 I['Brand'] = { spell: { resolve: (g, ctx) => g.battlefield.filter(o => o.owner === ctx.controller).forEach(o => g.gainControl(o, ctx.controller)) }, ai: 'none' };
 I['Bulwark'] = { triggers: [myUpkeep({ text: 'damage equal to the difference in hand sizes', targets: [T.opponent()], resolve: (g, ctx) => g.dealDamage(src(ctx), t0(ctx), g.players[ctx.controller].hand.length - g.players[t0(ctx).player].hand.length) })] };
 I['Destructive Urge'] = { triggers: [{ on: 'damagePlayer', when: (g, s, ev) => { const h = g.attachedTo(s); return h && ev.combat && ev.src && ev.src.id === h.id; }, text: 'that player sacrifices a land',
@@ -395,7 +400,7 @@ I['Sulfuric Vapors'] = {}; // handled in the engine's damage code
 I['Torch Song'] = { triggers: [mayCounter('verse')], abilities: [verseSac('{2}{R}', 'X damage to any target', [T.any()], (g, ctx) => g.dealDamage(ctx.source, t0(ctx), ctx.x), { verseBurn: true })] };
 I['Viashino Sandswimmer'] = { abilities: [{ cost: { mana: '{R}' }, text: 'Flip a coin: win, return it to hand; lose, sacrifice it', ai: { never: true },
   resolve: (g, ctx) => { const o = src(ctx); if (!g.alive(o)) return; const win = g.flip(); g.say(`Coin flip: ${win ? 'won' : 'lost'}.`); if (win) g.bounce(o); else g.sacrifice(o); } }] };
-I['Wildfire'] = { spell: { resolve: async (g, ctx) => { for (const p of [g.active, 1 - g.active]) await sacrificeN(g, p, 4, (g2, o) => g2.is(o, 'Land'), 'Sacrifice a land'); g.creatures().forEach(o => g.dealDamage(ctx.card, o, 4)); } }, ai: 'none' };
+I['Wildfire'] = { spell: { resolve: async (g, ctx) => { for (const p of g.apnap()) await sacrificeN(g, p, 4, (g2, o) => g2.is(o, 'Land'), 'Sacrifice a land'); g.creatures().forEach(o => g.dealDamage(ctx.card, o, 4)); } }, ai: 'none' };
 
 // =====================================================================
 // GREEN
@@ -418,7 +423,7 @@ I['Rofellos\'s Gift'] = { spell: { resolve: async (g, ctx) => {
   const picks = await g.chooseCards(ctx.controller, gy, `Return up to ${n} enchantment cards`, 0, Math.min(n, gy.length), 'regrow'); picks.forEach(c => g.moveTo(c, 'hand')); } }, ai: 'none' };
 I['Splinter'] = { spell: { targets: [T.artifact()], resolve: async (g, ctx) => { const o = t0(ctx); const p = g.ctrl(o); g.exile(o); await exileSameName(g, o, p); } }, ai: 'removeArtEnch' };
 I['Taunting Elf'] = { lure: true };
-I['Defense of the Heart'] = { triggers: [myUpkeep({ iff: (g, s) => g.creatures(1 - g.ctrl(s)).length >= 3, text: 'sacrifice it and search for up to two creatures', resolve: async (g, ctx) => {
+I['Defense of the Heart'] = { triggers: [myUpkeep({ iff: (g, s) => g.opps(g.ctrl(s)).some(q => g.creatures(q).length >= 3), text: 'sacrifice it and search for up to two creatures', resolve: async (g, ctx) => {
   if (!g.alive(src(ctx))) return; g.sacrifice(src(ctx)); await tutorTo(g, ctx.controller, c => c.def.types.includes('Creature'), 'Search for up to two creature cards', 'battlefield', 2); } })] };
 I['Harmonic Convergence'] = { spell: { resolve: g => g.battlefield.filter(o => g.is(o, 'Enchantment')).forEach(o => g.moveTo(o, 'library')) }, ai: 'none' };
 I['Hidden Gibbons'] = becomesOn((g, ev) => ev.card.def.types.includes('Instant'), [4, 4], ['Ape']);
@@ -438,7 +443,7 @@ I['Abundance'] = { replaceDraw: async (g, o, p) => {
   g.bump(); return true;
 } };
 I['Argothian Wurm'] = { triggers: [etb({ text: 'any player may sacrifice a land to put it on top of its owner\'s library', resolve: async (g, ctx) => {
-  for (const p of [g.active, 1 - g.active]) {
+  for (const p of g.apnap()) {
     const lands = g.perms(p, o => g.is(o, 'Land'));
     if (!lands.length || !g.alive(src(ctx))) continue;
     if (await g.yesno(p, 'Sacrifice a land to put Argothian Wurm on top of its owner\'s library?', { wurm: src(ctx) })) {
@@ -449,13 +454,13 @@ I['Carpet of Flowers'] = { triggers: [{ on: 'mainPhase', when: (g, s, ev) => ev.
   resolve: async (g, ctx) => { const o = src(ctx); if (!g.alive(o) || o.data.carpetTurn === g.turn) return; o.data.carpetTurn = g.turn;
     const n = g.countType(t0(ctx).player, 'Island'); if (!n) return; const col = await g.chooseColor(ctx.controller, `Add ${n} mana of which color?`); g.addMana(ctx.controller, mana({ [col]: n })); } }] };
 I['Fertile Ground'] = { onTappedForMana: async (g, s, o, p) => { if (s.attachedTo === o.id) { const col = await g.chooseColor(g.ctrl(o), 'Fertile Ground: add one mana of which color?'); g.addMana(g.ctrl(o), mana({ [col]: 1 })); } } };
-I['Greener Pastures'] = { triggers: [eachUpkeep({ iff: g => { const n = p => g.perms(p, o => g.is(o, 'Land')).length; return n(g.active) > n(1 - g.active); }, text: 'create a 1/1 Saproling', resolve: g => g.createToken(g.active, { name: 'Saproling', subtypes: ['Saproling'], colors: ['G'], power: 1, toughness: 1 }) })] };
+I['Greener Pastures'] = { triggers: [eachUpkeep({ iff: g => mostLands(g, g.active), text: 'create a 1/1 Saproling', resolve: g => g.createToken(g.active, { name: 'Saproling', subtypes: ['Saproling'], colors: ['G'], power: 1, toughness: 1 }) })] };
 I['Hidden Ancients'] = becomesOn((g, ev) => ev.card.def.types.includes('Enchantment'), [5, 5], ['Treefolk']);
 I['Hidden Guerrillas'] = becomesOn((g, ev) => ev.card.def.types.includes('Artifact'), [5, 3], ['Soldier'], { keywords: ['trample'] });
 I['Hidden Spider'] = becomesOn((g, ev) => ev.card.def.types.includes('Creature') && ev.card.def.keywords.includes('flying'), [3, 5], ['Spider'], { keywords: ['reach'] });
 I['Hidden Herd'] = { triggers: [{ on: 'landPlayed', when: (g, s, ev) => ev.player !== g.ctrl(s) && !ev.obj.def.supertypes.includes('Basic'), iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes a 3/3 Beast',
   resolve: (g, ctx) => { if (g.alive(src(ctx))) becomeCreature(g, src(ctx), [3, 3], ['Beast']); } }] };
-I['Hidden Predators'] = { stateTriggers: [{ check: (g, o) => g.is(o, 'Enchantment') && g.creatures(1 - g.ctrl(o)).some(x => g.pow(x) >= 4), iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes a 4/4 Beast',
+I['Hidden Predators'] = { stateTriggers: [{ check: (g, o) => g.is(o, 'Enchantment') && g.opps(g.ctrl(o)).some(q => g.creatures(q).some(x => g.pow(x) >= 4)), iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes a 4/4 Beast',
   resolve: (g, ctx) => { if (g.alive(src(ctx)) && g.is(src(ctx), 'Enchantment')) becomeCreature(g, src(ctx), [4, 4], ['Beast']); } }] };
 I['Hidden Stag'] = { triggers: [
   { on: 'landPlayed', when: (g, s, ev) => ev.player !== g.ctrl(s), iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes a 3/2 Elk Beast', resolve: (g, ctx) => { if (g.alive(src(ctx))) becomeCreature(g, src(ctx), [3, 2], ['Elk', 'Beast']); } },
@@ -469,7 +474,8 @@ I['Sporogenesis'] = { triggers: [
 I['Spreading Algae'] = { harm: true, triggers: [returnToHand, { on: 'tapped', when: (g, s, ev) => s.attachedTo === ev.obj.id, text: 'destroy the enchanted land', resolve: (g, ctx) => g.destroy(ctx.ev.obj) }] };
 I['Venomous Fangs'] = { triggers: [{ on: 'dealtDamage', when: (g, s, ev) => { const h = g.attachedTo(s); return h && ev.src && ev.src.id === h.id && ev.target.player == null && g.isCreature(ev.target); }, text: 'destroy the damaged creature', resolve: (g, ctx) => g.destroy(ctx.ev.target) }] };
 I['War Dance'] = { triggers: [mayCounter('verse')], abilities: [{ cost: { sacSelf: true }, xFrom: (g, o) => ctr(o, 'verse'), text: 'Target creature gets +X/+X', targets: [T.friendlyCreature()], ai: { never: true }, resolve: (g, ctx) => g.pump(t0(ctx), ctx.x, ctx.x) }] };
-I['Wild Dogs'] = { triggers: [myUpkeep({ iff: g => g.players[0].life !== g.players[1].life, text: 'the player with the most life gains control of it', resolve: (g, ctx) => { const p = g.players[0].life > g.players[1].life ? 0 : g.players[1].life > g.players[0].life ? 1 : null; if (p != null && g.alive(src(ctx))) g.gainControl(src(ctx), p); } })] };
+const lifeLeader = g => { const lives = g.livePlayers().map(p => g.players[p].life); const max = Math.max(...lives); const top = g.livePlayers().filter(p => g.players[p].life === max); return top.length === 1 ? top[0] : null; };
+I['Wild Dogs'] = { triggers: [myUpkeep({ iff: g => lifeLeader(g) != null, text: 'the player with the most life gains control of it', resolve: (g, ctx) => { const p = lifeLeader(g); if (p != null && g.alive(src(ctx))) g.gainControl(src(ctx), p); } })] };
 
 // =====================================================================
 // ARTIFACTS
@@ -492,18 +498,18 @@ I['Urza\'s Incubator'] = { spell: { resolve: async (g, ctx) => { if (ctx.perm) {
   costMod: (g, o, card, c) => { if (o.data.chosenType && card.def.types.includes('Creature') && card.def.subtypes.includes(o.data.chosenType)) c.generic -= 2; } };
 I['Angel\'s Trumpet'] = { statics: () => [{ layer: 'ability', affects: (g, x, ch) => ch.types.has('Creature'), apply: ch => ch.keywords.add('vigilance') }],
   triggers: [endStep({ text: 'tap creatures that didn\'t attack; damage for each', resolve: (g, ctx) => { const p = g.active; let n = 0; for (const o of g.creatures(p)) if (!o.tapped && o.data.attackedTurn !== g.turn) { g.tap(o); n++; } g.dealDamage(src(ctx), { player: p }, n); } })] };
-const dampingBlocked = (g, p) => { const n = q => g.perms(q).length; return n(p) > n(1 - p) && g.players[p].dampIgnore !== g.turn; };
+const dampingBlocked = (g, p) => { const n = q => g.perms(q).length; return g.opps(p).every(q => n(p) > n(q)) && g.players[p].dampIgnore !== g.turn; };
 I['Damping Engine'] = { forbidLand: (g, o, p) => dampingBlocked(g, p),
   forbidCast: (g, o, p, card) => dampingBlocked(g, p) && ['Artifact', 'Creature', 'Enchantment'].some(t => card.def.types.includes(t)),
   abilities: [{ anyPlayer: true, cost: { sac: { filter: () => true, prompt: 'Sacrifice a permanent to ignore Damping Engine this turn' } }, text: 'Ignore Damping Engine this turn', cond: (g, o, p) => dampingBlocked(g, p), noStack: true, ai: { damping: true },
     resolve: (g, ctx) => { g.players[ctx.controller].dampIgnore = g.turn; } }] };
 I['Memory Jar'] = { abilities: [{ tap: true, cost: { sacSelf: true }, text: 'Each player exiles their hand and draws seven', ai: { never: true }, resolve: async g => {
-  const exiled = [[], []];
-  for (const p of [0, 1]) for (const c of g.players[p].hand.slice()) exiled[p].push(g.moveTo(c, 'exile'));
-  for (const p of [g.active, 1 - g.active]) await g.draw(p, 7);
+  const exiled = {};
+  for (const p of g.livePlayers()) { exiled[p] = []; for (const c of g.players[p].hand.slice()) exiled[p].push(g.moveTo(c, 'exile')); }
+  for (const p of g.apnap()) await g.draw(p, 7);
   g.addDelayed({ on: 'endStep', src: { def: MTG.DB['Memory Jar'] }, controller: g.active, text: 'discard hands and return the exiled cards', resolve: async g2 => {
-    for (const p of [g2.active, 1 - g2.active]) await g2.chooseDiscard(p, g2.players[p].hand.length);
-    for (const p of [0, 1]) for (const c of exiled[p]) if (c && g2.alive(c) && c.zone === 'exile') g2.moveTo(c, 'hand');
+    for (const p of g2.apnap()) await g2.chooseDiscard(p, g2.players[p].hand.length);
+    for (const p of Object.keys(exiled)) for (const c of exiled[p]) if (c && g2.alive(c) && c.zone === 'exile') g2.moveTo(c, 'hand');
   } });
 } }] };
 I['Ring of Gix'] = { abilities: [{ tap: true, cost: { mana: '{1}' }, text: 'Tap target artifact, creature, or land', targets: [T.perm((g, o) => g.is(o, 'Artifact') || g.isCreature(o) || g.is(o, 'Land'))], ai: { tapper: true }, resolve: (g, ctx) => g.tap(t0(ctx)) }] };
@@ -541,5 +547,5 @@ I['Umbilicus'] = { triggers: [eachUpkeep({ text: 'pay 2 life or return a permane
   const p = g.active; const perms = g.perms(p);
   if (g.players[p].life >= 2 && await g.yesno(p, 'Umbilicus: pay 2 life? (otherwise return a permanent to hand)', { payLife: 2 })) { g.loseLife(p, 2); return; }
   const o = await g.choosePerm(p, perms, 'Return a permanent you control to its owner\'s hand', 'bounceOwn', false); if (o) g.bounce(o); } })] };
-I['Whetstone'] = { abilities: [{ cost: { mana: '{3}' }, text: 'Each player mills two cards', ai: { never: true }, resolve: g => [0, 1].forEach(p => g.mill(p, 2)) }] };
+I['Whetstone'] = { abilities: [{ cost: { mana: '{3}' }, text: 'Each player mills two cards', ai: { never: true }, resolve: g => g.livePlayers().forEach(p => g.mill(p, 2)) }] };
 })();

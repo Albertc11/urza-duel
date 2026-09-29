@@ -251,3 +251,29 @@ h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; margin: 0 0 .5em; }
 .online-status { min-height: 22px; margin: 8px 0; padding: 8px 10px; border-radius: 6px; background: rgba(0,0,0,.3); color: var(--gold2); font-size: 13px; }
 .online-status:empty { display: none; }
 .online-status b { font-size: 20px; letter-spacing: 3px; color: #fff; }
+
+/* ---------- 3–4 player layout: opponents side by side across the top ---------- */
+#board.multi { grid-template-rows: 1.15fr auto 1fr auto auto; }
+.opps { display: grid; gap: 6px; padding: 4px 6px 0; min-height: 0; }
+.opps.n2 { grid-template-columns: 1fr 1fr; }
+.opps.n3 { grid-template-columns: 1fr 1fr 1fr; }
+.opppanel { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 1px solid rgba(255,255,255,.06); border-radius: 8px; background: rgba(0,0,0,.12); overflow: hidden; }
+.opppanel .pbar { padding: 4px 8px; min-height: 0; gap: 8px; flex-wrap: wrap; }
+.opppanel .pbar .zones { gap: 4px; }
+.opppanel .pbar .pile { min-width: 0; padding: 2px 5px; font-size: 10px; }
+.opppanel .pbar .pile b { font-size: 12px; }
+.opppanel .pbar .mana-pool:empty { display: none; }
+.opppanel .opphand { min-height: 0; padding: 2px 8px; }
+.opppanel .opphand .cardback { width: 14px; height: 20px; }
+.opppanel .field { flex: 1; flex-direction: column; align-items: stretch; gap: 4px; }
+.opppanel .field .row.lands { flex: 0 0 auto; justify-content: flex-start; border-left: 0; padding-left: 0; border-top: 1px dashed rgba(255,255,255,.08); padding-top: 4px; }
+.opppanel.out { opacity: .4; filter: grayscale(.7); }
+.card .blk.atk { background: var(--target); }
+.seatrow { display: flex; gap: 6px; align-items: center; }
+.seatrow select, .seatrow input { min-width: 0; flex: 1; }
+.seatrow .seatnote { color: var(--muted); font-size: 12px; flex: 2; }
+/* cards you can see but not pick (e.g. the rest of a revealed hand) */
+.modal .cards .card.dim { opacity: .35; filter: grayscale(.8); cursor: not-allowed; }
+/* combat numbers so blockers can say exactly which attacker they block */
+.card .atknum { position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%); background: #ff5a3a; color: #fff; font-size: 11px; font-weight: 800; padding: 0 6px; border-radius: 8px; z-index: 2; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.card.linked { outline: 3px dashed #fff; outline-offset: 2px; }

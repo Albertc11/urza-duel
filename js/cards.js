@@ -206,7 +206,7 @@ I['Stroke of Genius'] = { spell: { targets: [T.player({ harm: false })], resolve
 I['Catalog'] = { spell: { resolve: async (g, ctx) => { await g.draw(ctx.controller, 2); await g.chooseDiscard(ctx.controller, 1); } }, ai: 'draw' };
 I['Frantic Search'] = { spell: { resolve: async (g, ctx) => { await g.draw(ctx.controller, 2); await g.chooseDiscard(ctx.controller, 2); await untapLands(g, ctx.controller, 3); } }, ai: 'draw' };
 I['Tolarian Winds'] = { spell: { resolve: async (g, ctx) => { const n = g.players[ctx.controller].hand.length; await g.chooseDiscard(ctx.controller, n); await g.draw(ctx.controller, n); } }, ai: 'none' };
-I['Windfall'] = { spell: { resolve: async g => { let m = 0; for (const p of [g.active, 1 - g.active]) { const n = g.players[p].hand.length; m = Math.max(m, n); await g.chooseDiscard(p, n); } for (const p of [g.active, 1 - g.active]) await g.draw(p, m); } }, ai: 'draw' };
+I['Windfall'] = { spell: { resolve: async g => { let m = 0; for (const p of g.apnap()) { const n = g.players[p].hand.length; m = Math.max(m, n); await g.chooseDiscard(p, n); } for (const p of g.apnap()) await g.draw(p, m); } }, ai: 'draw' };
 I['Archivist'] = { abilities: [{ tap: true, text: 'Draw a card', ai: { eot: true }, resolve: (g, ctx) => g.draw(ctx.controller, 1) }] };
 I['Thornwind Faeries'] = { abilities: [{ tap: true, text: '1 damage to any target', targets: [T.any()], ai: { ping: 1 }, resolve: (g, ctx) => g.dealDamage(src(ctx), t0(ctx), 1) }] };
 I['Horseshoe Crab'] = { abilities: [{ cost: { mana: '{U}' }, untapCost: true, text: 'Untap', ai: { never: true }, resolve: (g, ctx) => g.untap(src(ctx)) }] };
@@ -245,7 +245,7 @@ I['Temporal Adept'] = { abilities: [{ tap: true, cost: { mana: '{U}{U}{U}' }, te
 I['Telepathic Spies'] = { triggers: [etb({ text: 'look at target opponent\'s hand', targets: [T.opponent()], resolve: (g, ctx) => reveal(g, ctx.controller, g.players[t0(ctx).player].hand, 'Opponent\'s hand') })] };
 I['Thieving Magpie'] = { triggers: [dealsDamageToPlayer({ text: 'draw a card', resolve: (g, ctx) => g.draw(ctx.controller, 1) }, { opp: true })] };
 I['Hibernation'] = { spell: { resolve: g => g.battlefield.filter(o => g.isColor(o, 'G')).forEach(o => g.bounce(o)) }, ai: 'none' };
-I['Curfew'] = { spell: { resolve: async g => { for (const p of [g.active, 1 - g.active]) { const c = g.creatures(p); if (!c.length) continue; const pick = await g.choosePerm(p, c, 'Return a creature you control to its owner\'s hand', 'bounceOwn', false); if (pick) g.bounce(pick); } } }, ai: 'none' };
+I['Curfew'] = { spell: { resolve: async g => { for (const p of g.apnap()) { const c = g.creatures(p); if (!c.length) continue; const pick = await g.choosePerm(p, c, 'Return a creature you control to its owner\'s hand', 'bounceOwn', false); if (pick) g.bounce(pick); } } }, ai: 'none' };
 I['Imaginary Pet'] = { triggers: [myUpkeep({ iff: (g, s) => g.players[g.ctrl(s)].hand.length > 0, text: 'return to hand', resolve: (g, ctx) => g.alive(src(ctx)) && g.bounce(src(ctx)) })] };
 I['Fog Bank'] = { preventDealt: (g, o, combat) => combat, preventTaken: (g, o, combat) => combat };
 I['Fatigue'] = { spell: { targets: [T.player()], resolve: (g, ctx) => { g.players[t0(ctx).player].skipDraw++; } }, ai: 'none' };
@@ -263,7 +263,7 @@ I['Hermetic Study'] = { statics: (g, o) => o.attachedTo ? [{ layer: 'ability', a
 const PING1 = { tap: true, text: '1 damage to any target', targets: [T.any()], ai: { ping: 1 }, resolve: (g, ctx) => g.dealDamage(src(ctx), t0(ctx), 1) };
 I['Mental Discipline'] = { abilities: [{ cost: { mana: '{1}{U}', discard: {} }, text: 'Draw a card', ai: { never: true }, resolve: (g, ctx) => g.draw(ctx.controller, 1) }] };
 I['King Crab'] = { abilities: [{ tap: true, cost: { mana: '{1}{U}' }, text: 'Put target green creature on top of its owner\'s library', targets: [T.creature({ filter: (g, o) => g.isColor(o, 'G') })], ai: { removal: true }, resolve: (g, ctx) => g.moveTo(t0(ctx), 'library') }] };
-I['Show and Tell'] = { spell: { resolve: async g => { for (const p of [g.active, 1 - g.active]) {
+I['Show and Tell'] = { spell: { resolve: async g => { for (const p of g.apnap()) {
   const c = g.players[p].hand.filter(x => ['Artifact', 'Creature', 'Enchantment', 'Land'].some(t => x.def.types.includes(t)) && !x.def.enchant && x.def.supported);
   const [pick] = await g.chooseCards(p, c, 'You may put an artifact, creature, enchantment, or land card onto the battlefield', 0, 1, 'putOntoBattlefield');
   if (pick) g.moveTo(pick, 'battlefield', { controller: p }); } } }, ai: 'none' };
@@ -272,18 +272,26 @@ I['Show and Tell'] = { spell: { resolve: async g => { for (const p of [g.active,
 // BLACK
 // =====================================================================
 I['Dark Ritual'] = { spell: { resolve: (g, ctx) => g.addMana(ctx.controller, mana({ B: 3 })) }, ai: 'ritual' };
-const handDiscard = (filter, label) => ({ spell: { targets: [T.opponent()], resolve: async (g, ctx) => {
-  const p = t0(ctx).player; const hand = g.players[p].hand;
-  await reveal(g, ctx.controller, hand, 'Opponent reveals their hand');
+// "Target opponent reveals their hand. You choose a <kind> card from it. That player discards that card."
+// One window shows the whole revealed hand; only eligible cards can be picked.
+async function revealAndChoose(g, ctx, p, filter, what) {
+  const hand = g.players[p].hand.slice();
+  g.say(`${g.pname(p)} reveals their hand: ${hand.map(c => c.def.name).join(', ') || 'no cards'}.`);
   const cands = hand.filter(c => filter(c));
-  const [pick] = await g.chooseCards(ctx.controller, cands, label, 1, 1, 'oppDiscard');
+  if (!cands.length) {
+    await reveal(g, ctx.controller, hand, `${g.pname(p)}'s hand has no ${what} — nothing is discarded`);
+    g.say(`  → ${g.pname(p)} has no ${what}, so nothing is discarded.`);
+    return;
+  }
+  const [pick] = await g.chooseCards(ctx.controller, cands, `${g.pname(p)} reveals their hand — choose a ${what} to discard`, 1, 1, 'oppDiscard', { shown: hand });
   if (pick) await g.discard(p, pick);
-} }, ai: 'discard' });
-I['Duress'] = handDiscard(c => !c.def.types.includes('Creature') && !c.def.types.includes('Land'), 'Choose a noncreature, nonland card to discard');
-I['Ostracize'] = handDiscard(c => c.def.types.includes('Creature'), 'Choose a creature card to discard');
-I['Unnerve'] = { spell: { resolve: (g, ctx) => g.chooseDiscard(1 - ctx.controller, 2) }, ai: 'discard' };
+}
+const handDiscard = (filter, what) => ({ spell: { targets: [T.opponent()], resolve: (g, ctx) => revealAndChoose(g, ctx, t0(ctx).player, filter, what) }, ai: 'discard' });
+I['Duress'] = handDiscard(c => !c.def.types.includes('Creature') && !c.def.types.includes('Land'), 'noncreature, nonland card');
+I['Ostracize'] = handDiscard(c => c.def.types.includes('Creature'), 'creature card');
+I['Unnerve'] = { spell: { resolve: async (g, ctx) => { for (const q of g.opps(ctx.controller)) await g.chooseDiscard(q, 2); } }, ai: 'discard' };
 I['Ravenous Rats'] = { triggers: [etb({ text: 'target opponent discards a card', targets: [T.opponent()], resolve: (g, ctx) => g.chooseDiscard(t0(ctx).player, 1) })] };
-I['Cackling Fiend'] = { triggers: [etb({ text: 'each opponent discards a card', resolve: (g, ctx) => g.chooseDiscard(1 - ctx.controller, 1) })] };
+I['Cackling Fiend'] = { triggers: [etb({ text: 'each opponent discards a card', resolve: async (g, ctx) => { for (const q of g.opps(ctx.controller)) await g.chooseDiscard(q, 1); } })] };
 I['Abyssal Horror'] = { triggers: [etb({ text: 'target player discards two cards', targets: [T.player({ harm: true, pfilter: undefined })], resolve: (g, ctx) => g.chooseDiscard(t0(ctx).player, 2) })] };
 I['Expunge'] = { spell: { targets: [T.creature({ filter: (g, o) => !g.is(o, 'Artifact') && isNonblack(g, o) })], resolve: (g, ctx) => g.destroy(t0(ctx), { noRegen: true }) }, ai: 'removal' };
 I['Swat'] = { spell: { targets: [T.creature({ filter: (g, o) => g.pow(o) <= 2 })], resolve: (g, ctx) => g.destroy(t0(ctx)) }, ai: 'removal' };
@@ -295,7 +303,7 @@ I['Corrupt'] = { spell: { targets: [T.any()], resolve: (g, ctx) => { const n = g
 I['Soul Feast'] = { spell: { targets: [T.player({ harm: true })], resolve: (g, ctx) => { g.loseLife(t0(ctx).player, 4); g.gainLife(ctx.controller, 4); } }, ai: 'drain' };
 I['Sick and Tired'] = { spell: { targets: [T.creature({ count: 2 })], resolve: (g, ctx) => t0(ctx).filter(Boolean).forEach(o => g.pump(o, -1, -1)) }, ai: 'shrink' };
 I['Pestilence'] = { abilities: [{ cost: { mana: '{B}' }, text: '1 damage to each creature and each player', ai: { pestilence: true },
-  resolve: (g, ctx) => { const s = src(ctx); g.creatures().forEach(o => g.dealDamage(s, o, 1)); [0, 1].forEach(p => g.dealDamage(s, { player: p }, 1)); } }],
+  resolve: (g, ctx) => { const s = src(ctx); g.creatures().forEach(o => g.dealDamage(s, o, 1)); g.livePlayers().forEach(p => g.dealDamage(s, { player: p }, 1)); } }],
   triggers: [endStep({ iff: g => g.creatures().length === 0, text: 'sacrifice (no creatures)', resolve: (g, ctx) => g.alive(src(ctx)) && g.sacrifice(src(ctx)) })] };
 I['Phyrexian Ghoul'] = { abilities: [{ cost: { sac: { filter: (g, o) => g.isCreature(o), prompt: 'Sacrifice a creature' } }, text: '+2/+2 until end of turn', ai: { never: true }, resolve: (g, ctx) => g.alive(src(ctx)) && g.pump(src(ctx), 2, 2) }] };
 const carrier = n => ({ abilities: [{ tap: true, cost: { sacSelf: true }, text: `Target creature gets -${n}/-${n}`, targets: [T.creature()], ai: { shrink: n }, resolve: (g, ctx) => g.pump(t0(ctx), -n, -n) }] });
@@ -330,7 +338,7 @@ I['Vampiric Embrace'] = { statics: combine(auraPT(2, 2), auraKW('flying')), trig
 I['Despondency'] = { harm: true, statics: auraPT(-2, 0), triggers: [returnToHand] };
 I['Sicken'] = { harm: true, statics: auraPT(-1, -1) };
 I['Twisted Experiment'] = { statics: auraPT(3, -1) };
-I['Exhume'] = { spell: { resolve: async g => { for (const p of [g.active, 1 - g.active]) {
+I['Exhume'] = { spell: { resolve: async g => { for (const p of g.apnap()) {
   const c = g.players[p].graveyard.filter(x => x.def.types.includes('Creature'));
   const [pick] = await g.chooseCards(p, c, 'Put a creature card from your graveyard onto the battlefield', 1, 1, 'reanimate');
   if (pick) g.moveTo(pick, 'battlefield', { controller: p }); } } }, ai: 'reanimate' };
@@ -345,7 +353,7 @@ I['Engineered Plague'] = {
   statics: (g, o) => o.data.chosenType ? [{ layer: 'ptmod', affects: (g2, x, ch) => ch.types.has('Creature') && ch.subtypes.has(o.data.chosenType), apply: ch => { ch.power--; ch.toughness--; } }] : [],
 };
 I['Attrition'] = { abilities: [{ cost: { mana: '{B}', sac: { filter: (g, o) => g.isCreature(o), prompt: 'Sacrifice a creature' } }, text: 'Destroy target nonblack creature', targets: [T.creature({ filter: isNonblack })], ai: { never: true }, resolve: (g, ctx) => g.destroy(t0(ctx)) }] };
-I['Subversion'] = { triggers: [myUpkeep({ text: 'drain 1', resolve: (g, ctx) => { const o = 1 - ctx.controller; const before = g.players[o].life; g.loseLife(o, 1); g.gainLife(ctx.controller, before - g.players[o].life); } })] };
+I['Subversion'] = { triggers: [myUpkeep({ text: 'drain 1', resolve: (g, ctx) => { let lost = 0; for (const o of g.opps(ctx.controller)) { const before = g.players[o].life; g.loseLife(o, 1); lost += before - g.players[o].life; } g.gainLife(ctx.controller, lost); } })] };
 I['No Mercy'] = { triggers: [{ on: 'damagePlayer', when: (g, s, ev) => ev.player === g.ctrl(s) && ev.src && ev.src.zone === 'battlefield' && g.isCreature(ev.src), text: 'destroy that creature', resolve: (g, ctx) => g.destroy(ctx.ev.src) }] };
 I['Disease Carriers'] = { triggers: [dies({ text: 'target creature gets -2/-2', targets: [T.creature()], resolve: (g, ctx) => g.pump(t0(ctx), -2, -2) })] };
 I['Plague Dogs'] = { abilities: [sacDraw('{2}')], triggers: [dies({ text: 'all creatures get -1/-1', resolve: g => g.creatures().forEach(o => g.pump(o, -1, -1)) })] };
@@ -378,9 +386,9 @@ I['Arc Lightning'] = { spell: { targets: [T.any({ count: 3, min: 1, prompt: 'Cho
     }
   },
   resolve: (g, ctx) => t0(ctx).forEach((t, i) => t && g.dealDamage(ctx.card, t, ctx.data.split[i])) }, ai: 'burn', burn: 3 };
-I['Steam Blast'] = { spell: { resolve: (g, ctx) => { g.creatures().forEach(o => g.dealDamage(ctx.card, o, 2)); [0, 1].forEach(p => g.dealDamage(ctx.card, { player: p }, 2)); } }, ai: 'sweep2' };
-I['Fault Line'] = { spell: { resolve: (g, ctx) => { g.creatures().filter(o => !g.has(o, 'flying')).forEach(o => g.dealDamage(ctx.card, o, ctx.x)); [0, 1].forEach(p => g.dealDamage(ctx.card, { player: p }, ctx.x)); } }, ai: 'none' };
-I['Acidic Soil'] = { spell: { resolve: (g, ctx) => [0, 1].forEach(p => g.dealDamage(ctx.card, { player: p }, g.perms(p, o => g.is(o, 'Land')).length)) }, ai: 'none' };
+I['Steam Blast'] = { spell: { resolve: (g, ctx) => { g.creatures().forEach(o => g.dealDamage(ctx.card, o, 2)); g.livePlayers().forEach(p => g.dealDamage(ctx.card, { player: p }, 2)); } }, ai: 'sweep2' };
+I['Fault Line'] = { spell: { resolve: (g, ctx) => { g.creatures().filter(o => !g.has(o, 'flying')).forEach(o => g.dealDamage(ctx.card, o, ctx.x)); g.livePlayers().forEach(p => g.dealDamage(ctx.card, { player: p }, ctx.x)); } }, ai: 'none' };
+I['Acidic Soil'] = { spell: { resolve: (g, ctx) => g.livePlayers().forEach(p => g.dealDamage(ctx.card, { player: p }, g.perms(p, o => g.is(o, 'Land')).length)) }, ai: 'none' };
 I['Disorder'] = { spell: { resolve: (g, ctx) => { const whites = g.creatures().filter(o => g.isColor(o, 'W')); const ps = [...new Set(whites.map(o => g.ctrl(o)))]; whites.forEach(o => g.dealDamage(ctx.card, o, 2)); ps.forEach(p => g.dealDamage(ctx.card, { player: p }, 2)); } }, ai: 'none' };
 I['Rack and Ruin'] = { spell: { targets: [T.artifact({ count: 2 })], resolve: (g, ctx) => t0(ctx).filter(Boolean).forEach(o => g.destroy(o)) }, ai: 'removeArtEnch' };
 I['Scrap'] = { spell: { targets: [T.artifact()], resolve: (g, ctx) => g.destroy(t0(ctx)) }, ai: 'removeArtEnch' };
@@ -599,12 +607,12 @@ I['Serra\'s Sanctum'] = { manaAbilities: [{ tap: true, auto: true, label: 'Add {
 I['Tolarian Academy'] = { manaAbilities: [{ tap: true, auto: true, label: 'Add {U} for each artifact you control', options: (g, o) => [mana({ U: g.perms(g.ctrl(o), x => g.is(x, 'Artifact')).length })] }] };
 I['Phyrexian Tower'] = { manaAbilities: [{ tap: true, auto: false, label: 'Sacrifice a creature: Add {B}{B}', cond: (g, o, p) => g.creatures(p).length > 0,
   cost: { custom: async (g, o, p) => { const c = await g.choosePerm(p, g.creatures(p), 'Sacrifice a creature', 'sacrifice', true); if (!c) return false; g.sacrifice(c); return true; } }, options: () => [mana({ B: 2 })] }] };
-I['Shivan Gorge'] = { abilities: [{ tap: true, cost: { mana: '{2}{R}' }, text: '1 damage to each opponent', ai: { eot: true }, resolve: (g, ctx) => g.dealDamage(src(ctx), { player: 1 - ctx.controller }, 1) }] };
+I['Shivan Gorge'] = { abilities: [{ tap: true, cost: { mana: '{2}{R}' }, text: '1 damage to each opponent', ai: { eot: true }, resolve: (g, ctx) => g.opps(ctx.controller).forEach(q => g.dealDamage(src(ctx), { player: q }, 1)) }] };
 I['Yavimaya Hollow'] = { abilities: [{ tap: true, cost: { mana: '{G}' }, text: 'Regenerate target creature', targets: [T.friendlyCreature()], ai: { regenOther: true }, resolve: (g, ctx) => regenTarget(g, t0(ctx)) }] };
 I['Thran Quarry'] = { triggers: [endStep({ iff: (g, s) => g.creatures(g.ctrl(s)).length === 0, text: 'sacrifice (you control no creatures)', resolve: (g, ctx) => g.alive(src(ctx)) && !g.creatures(ctx.controller).length && g.sacrifice(src(ctx)) })] };
 
 // shared helpers for cards2.js
 MTG.CardKit = { T, t0, src, isT, isNonblack, etb, dies, myUpkeep, eachUpkeep, endStep, attacks, blocks, becomesBlocked, dealsDamageToPlayer, enchantedDies,
   returnToHand, ltbGraveyard, pumpSelf, regen, sacDraw, regenTarget, auraStatic, auraPT, auraKW, auraFlag, combine, addFlag, mana, untapLands, sacrificeN,
-  becomeCreature, creaturesYouControl, reveal, exileSameName, opal };
+  becomeCreature, creaturesYouControl, reveal, exileSameName, opal, revealAndChoose };
 })();

@@ -27,7 +27,7 @@ I['Sonic Burst'] = { spell: { targets: [T.any()], canCast: (g, p, card) => g.pla
 I['Shock'] = { spell: { targets: [T.any()], resolve: (g, ctx) => g.dealDamage(ctx.card, t0(ctx), 2) }, ai: 'burn', burn: 2 };
 I['Lightning Blast'] = { spell: { targets: [T.any()], resolve: (g, ctx) => g.dealDamage(ctx.card, t0(ctx), 4) }, ai: 'burn', burn: 4 };
 I['Terror'] = { spell: { targets: [T.creature({ filter: (g, o) => !g.is(o, 'Artifact') && isNonblack(g, o) })], resolve: (g, ctx) => g.destroy(t0(ctx), { noRegen: true }) }, ai: 'removal' };
-I['Commander Greven il-Vec'] = { triggers: [etb({ text: 'sacrifice a creature', resolve: (g, ctx) => sacrificeN(g, ctx.controller, 1, (g2, o) => g2.isCreature(o), 'Sacrifice a creature') })] };
+I['Commander Greven il-Vec'] = { etbSacrifice: true, triggers: [etb({ text: 'sacrifice a creature', resolve: (g, ctx) => sacrificeN(g, ctx.controller, 1, (g2, o) => g2.isCreature(o), 'Sacrifice a creature') })] };
 I['Diabolic Edict'] = { spell: { targets: [T.player({ harm: true })], resolve: (g, ctx) => sacrificeN(g, t0(ctx).player, 1, (g2, o) => g2.isCreature(o), 'Sacrifice a creature') }, ai: 'edict' };
 I['Dauthi Jackal'] = { abilities: [{ cost: { mana: '{B}{B}', sacSelf: true }, text: 'Destroy target blocking creature', targets: [T.creature({ filter: (g, o) => o.blocking })], ai: { removal: true }, resolve: (g, ctx) => g.destroy(t0(ctx)) }] };
 I['Sorceress Queen'] = { abilities: [{ tap: true, text: 'Target creature other than this has base P/T 0/2', targets: [T.creature({ filter: (g, o, ctx) => o !== ctx.source })], ai: { never: true },

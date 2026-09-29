@@ -327,7 +327,7 @@ I['Phyrexian Negator'] = { triggers: [{ on: 'damageCreature', when: (g, s, ev) =
 I['Order of Yawgmoth'] = { triggers: [dealsDamageToPlayer({ text: 'that player discards a card', resolve: (g, ctx) => g.chooseDiscard(ctx.ev.player, 1) })] };
 I['Eastern Paladin'] = { abilities: [{ tap: true, cost: { mana: '{B}{B}' }, text: 'Destroy target green creature', targets: [T.creature({ filter: (g, o) => g.isColor(o, 'G') })], ai: { removal: true }, resolve: (g, ctx) => g.destroy(t0(ctx)) }] };
 I['Western Paladin'] = { abilities: [{ tap: true, cost: { mana: '{B}{B}' }, text: 'Destroy target white creature', targets: [T.creature({ filter: (g, o) => g.isColor(o, 'W') })], ai: { removal: true }, resolve: (g, ctx) => g.destroy(t0(ctx)) }] };
-I['Spined Fluke'] = { abilities: [regen('{B}')], triggers: [etb({ text: 'sacrifice a creature', resolve: (g, ctx) => sacrificeN(g, ctx.controller, 1, (g2, o) => g2.isCreature(o), 'Sacrifice a creature') })] };
+I['Spined Fluke'] = { etbSacrifice: true, abilities: [regen('{B}')], triggers: [etb({ text: 'sacrifice a creature', resolve: (g, ctx) => sacrificeN(g, ctx.controller, 1, (g2, o) => g2.isCreature(o), 'Sacrifice a creature') })] };
 I['Priest of Gix'] = { triggers: [etb({ text: 'add {B}{B}{B}', resolve: (g, ctx) => g.addMana(ctx.controller, mana({ B: 3 })) })] };
 I['Blood Vassal'] = { manaAbilities: [{ cost: { sacSelf: true }, auto: false, label: 'Sacrifice: Add {B}{B}', options: () => [mana({ B: 2 })] }] };
 I['Skirge Familiar'] = { manaAbilities: [{ auto: false, label: 'Discard a card: Add {B}', cond: (g, o, p) => g.players[p].hand.length > 0,

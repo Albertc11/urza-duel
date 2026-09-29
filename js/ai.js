@@ -197,6 +197,15 @@ class AIAgent {
       if (d.name === 'Covetous Dragon' && !g.perms(p, o => g.is(o, 'Artifact')).length) return null;
       if (d.name === 'Tethered Griffin' && !g.perms(p, o => g.is(o, 'Enchantment')).length) return null;
       if (d.name === 'Emperor Crocodile' && !g.creatures(p).length) return null;
+      // "When this enters, sacrifice a creature": only worth it with a cheaper creature to feed it,
+      // otherwise the creature has to sacrifice itself
+      if (im.etbSacrifice) {
+        const fodder = g.creatures(p);
+        const own = this.cardValue(g, card);
+        if (!fodder.length || Math.min(...fodder.map(o => this.value(g, o))) >= own) return null;
+      }
+      // Body Snatcher is exiled unless you discard a creature card
+      if (d.name === 'Body Snatcher' && !g.players[p].hand.some(c => c !== card && c.def.types.includes('Creature'))) return null;
       // creatures with ETB targets: make sure there's a good target
       const etbT = (im.triggers || []).find(t => t.on === 'etb' && t.targets);
       if (etbT && etbT.targets[0].harm) {

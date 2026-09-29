@@ -169,6 +169,21 @@ test('AI never puts a second Pacifism on an already pacified creature', async ()
   const plan = ai.planCast(g, 0, card, 'main1');
   assert(plan && plan.intent[0] === other, 'should target the creature that is not pacified');
 });
+test('Commander Greven alone must sacrifice itself (its trigger is mandatory)', async () => {
+  const g = setup(); lands(g, 0, 'Swamp', 6);
+  const c = hand(g, 0, 'Commander Greven il-Vec'); await g.castSpell(0, c, {}); await resolveAll(g);
+  assert(!g.battlefield.some(o => o.def.name === 'Commander Greven il-Vec'), 'Greven should be sacrificed when it is the only creature');
+});
+test('AI only casts Commander Greven when it has a cheaper creature to sacrifice, and sacrifices that one', async () => {
+  const g = setup(); lands(g, 0, 'Swamp', 6);
+  const c = hand(g, 0, 'Commander Greven il-Vec'); const ai = new M.AIAgent(); ai._g = g;
+  assert(!ai.planCast(g, 0, c, 'main1'), 'should not cast Greven with no other creature');
+  const rat = put(g, 0, 'Plague Beetle');
+  assert(ai.planCast(g, 0, c, 'main1'), 'should cast Greven when a 1/1 can be sacrificed');
+  g.players[0].agent = ai; await g.castSpell(0, c, {}); await resolveAll(g);
+  assert(g.battlefield.some(o => o.def.name === 'Commander Greven il-Vec'), 'Greven stays');
+  assert(!g.battlefield.some(o => o.def.name === 'Plague Beetle'), 'the Beetle was sacrificed');
+});
 
 (async () => {
   let pass = 0;

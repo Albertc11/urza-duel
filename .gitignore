@@ -1,0 +1,6 @@
+# local-only: downloaded card images (the web version uses Scryfall) and the source spreadsheet
+images/
+magic.xlsx
+~$*.xlsx
+.claude/
+node_modules/

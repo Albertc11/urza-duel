@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Urza's Duel</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Main menu -->
+<div id="menu" class="screen">
+  <div class="menu-box">
+    <h1>Urza's Duel</h1>
+    <div class="sub">Magic: The Gathering — Urza's Saga · Legacy · Destiny</div>
+    <div class="menu-row"><label>Mode</label>
+      <div class="seg" id="modeSeg"><button data-mode="ai" class="on">vs Computer</button><button data-mode="hotseat">Hotseat</button><button data-mode="online">Online</button></div>
+    </div>
+    <div class="menu-row"><label for="p1name">Player 1</label><input type="text" id="p1name" value="Player 1"></div>
+    <div class="menu-row"><label for="p1deck">Player 1 deck</label><select id="p1deck"></select></div>
+    <div class="menu-row offline-only"><label for="p2name" id="p2label">Opponent</label><input type="text" id="p2name" value="Urza (AI)"></div>
+    <div class="menu-row offline-only"><label for="p2deck">Opponent deck</label><select id="p2deck"></select></div>
+    <div class="online-only hidden">
+      <div class="menu-row"><label>Host a game</label><button class="primary" id="hostBtn">Create room</button></div>
+      <div class="menu-row"><label for="joinCode">Join a game</label><div style="display:flex;gap:6px"><input type="text" id="joinCode" placeholder="Room code" maxlength="6" style="flex:1;text-transform:uppercase"><button class="primary" id="joinBtn">Join</button></div></div>
+      <div class="online-status" id="onlineStatus"></div>
+      <div class="menu-note">Each player picks their own deck above. The host shares the room code; the other player types it in.</div>
+    </div>
+    <div class="menu-actions">
+      <button class="primary offline-only" id="startBtn">Start Game</button>
+      <button id="builderBtn">Deck Builder</button>
+    </div>
+    <div class="menu-note" id="menuNote"></div>
+  </div>
+</div>
+
+<!-- Deck builder -->
+<div id="builder" class="screen hidden">
+  <div class="top">
+    <h2>Deck Builder</h2>
+    <div class="filters">
+      <input type="text" id="fText" placeholder="Search name / text…" size="18">
+      <div class="colorfilter" id="fColors"></div>
+      <select id="fType"><option value="">All types</option><option>Creature</option><option>Instant</option><option>Sorcery</option><option>Enchantment</option><option>Artifact</option><option>Land</option></select>
+      <select id="fSet"><option value="">All sets</option><option value="usg">Urza's Saga</option><option value="ulg">Urza's Legacy</option><option value="uds">Urza's Destiny</option><option value="extra">Other sets</option></select>
+      <select id="fCmc"><option value="">Any cost</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option value="6">6+</option></select>
+      <label><input type="checkbox" id="fPlayable" checked> Playable only</label>
+      <span id="poolCount" class="menu-note" style="margin:0"></span>
+    </div>
+    <button id="builderBack" style="margin-left:auto">← Menu</button>
+  </div>
+  <div id="pool"></div>
+  <div id="deckside">
+    <div class="hdr">
+      <div class="line"><select id="deckSelect" style="flex:1"></select><button id="newDeck">New</button></div>
+      <div class="line"><input type="text" id="deckName" placeholder="Deck name" style="flex:1"><span id="deckCount"></span></div>
+      <div class="line" id="basicAdd"></div>
+    </div>
+    <div id="decklist"></div>
+    <div class="curve" id="curve"></div>
+    <div id="deckerrors"></div>
+    <div class="foot">
+      <button class="primary" id="saveDeck">Save</button>
+      <button id="dupDeck">Save as copy</button>
+      <button id="exportDeck">Export</button>
+      <button id="importDeck">Import</button>
+      <button class="danger" id="deleteDeck">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Game -->
+<div id="game" class="screen hidden">
+  <div id="board"></div>
+  <div id="side">
+    <div id="preview"><div class="pimg"></div><div class="ptext">Hover a card to see it here.</div></div>
+    <div id="stackPanel"><h3>Stack</h3><div id="stackList"></div></div>
+    <div id="logPanel"><h3>Game log</h3><div id="log"></div></div>
+    <div id="sideButtons">
+      <label title="Stop at every priority instead of auto-passing when you have nothing to do"><input type="checkbox" id="fullControl"> Full control</label>
+      <button id="concedeBtn" class="danger">Concede</button>
+      <button id="menuBtn">Menu</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlayRoot"></div>
+
+<script src="js/carddata.js"></script>
+<script src="js/carddata-extra.js"></script>
+<script src="js/images.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/cards.js"></script>
+<script src="js/cards2.js"></script>
+<script src="js/cards3.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/sheetdecks.js"></script>
+<script src="js/decks.js"></script>
+<script src="js/vendor/peerjs.min.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/net.js"></script>
+<script src="js/builder.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

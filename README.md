@@ -29,11 +29,11 @@ In a 3–4 player game:
 ## Play online
 
 1. Everyone opens the game's web address (see **Publishing**) with the same version.
-2. The host picks **Online**, sets the number of players, and sets each other seat to **Online player** or **Computer**. Then they click **Create room** and share the 6-letter code.
+2. The host picks **Online**, sets the number of players, and sets each other seat to **Online player** or **Computer**. Then they click **Create room** and share the 8-character code.
 3. Each other player picks **Online**, enters their name and deck, types the code and clicks **Join**. The lobby shows who has joined; the game starts when every online seat is filled.
 
 How it works:
-- Browsers first try to connect directly (WebRTC, via the free PeerJS service). If that hasn't worked within about 8 seconds, as happens on many mobile, carrier and home networks, they automatically switch to a free public relay (MQTT over secure WebSockets: EMQX, HiveMQ or Mosquitto's public brokers). No account is needed. In relay mode, moves pass through that public server, addressed by the room code.
+- Browsers first try to connect directly (WebRTC, via the free PeerJS service). If that hasn't worked within about 8 seconds, as happens on many mobile, carrier and home networks, they automatically switch to a free public relay (MQTT over secure WebSockets: EMQX, HiveMQ or Mosquitto's public brokers). No account is needed. In relay mode, moves pass through that public server, but they are encrypted with a key derived from the room code (AES-GCM, PBKDF2), and the channel name is derived from it too. Without the code, someone listening on the server sees neither the room code nor the game, and can't inject or fake moves.
 - Adding `?relay=1` to the address makes a joining player skip the direct attempt.
 - The host connects to up to three guests, relays moves between them, and runs any computer players.
 - Every browser runs the same game engine from a shared random seed, and only players' decisions travel over the connection. You only see your own hand.

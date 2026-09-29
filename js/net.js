@@ -4,8 +4,9 @@
 (function () {
 'use strict';
 const MTG = window.MTG;
-const PROTOCOL = 'urza-duel-2';
+const PROTOCOL = 'urza-duel-3';
 const ID_PREFIX = 'urzaduel-';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ---------- encoding decisions as object ids ----------
 function findObj(g, id) {
@@ -116,36 +117,68 @@ class RemoteNetAgent {
 // ---------- relay fallback ----------
 // When a direct WebRTC connection can't be made (strict NAT, mobile/carrier networks), players talk through a
 // free public MQTT broker over secure WebSockets instead. The host listens on every broker; a guest uses the
-// first one it can reach. Topics are scoped by the room code.
+// first one it can reach. Anyone can listen on a public broker, so every message is encrypted and authenticated
+// (AES-GCM) with a key derived from the room code, and the topic is derived from it too: without the code, an
+// eavesdropper sees neither the room code nor the game, and can't inject messages.
 const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
 const DIRECT_TIMEOUT = 8000;
-const topicBase = code => `urzaduel/v2/${code}`;
 const rid = () => Math.random().toString(36).slice(2, 10);
+async function relayKeys(code) {
+  const te = new TextEncoder();
+  const pass = await crypto.subtle.importKey('raw', te.encode(code), 'PBKDF2', false, ['deriveBits']);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: te.encode('urza-duel relay v3'), iterations: 200000, hash: 'SHA-256' }, pass, 384));
+  const key = await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  return { key, base: 'urzaduel/v3/' + [...bits.slice(32)].map(b => b.toString(16).padStart(2, '0')).join('') };
+}
+async function seal(key, obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj))));
+  const all = new Uint8Array(12 + ct.length); all.set(iv); all.set(ct, 12);
+  let bin = ''; for (let i = 0; i < all.length; i += 8192) bin += String.fromCharCode.apply(null, all.subarray(i, i + 8192));
+  return btoa(bin);
+}
+// null for anything not sealed with this room's key (garbage, tampering, other rooms)
+async function unseal(key, text) {
+  try {
+    const all = Uint8Array.from(atob(String(text)), c => c.charCodeAt(0));
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.subarray(0, 12) }, key, all.subarray(12));
+    return JSON.parse(new TextDecoder().decode(pt));
+  } catch (e) { return null; }
+}
+// Decryption is async; chain it so messages are handled in the order they arrived.
+function orderedReceiver(key, handle) {
+  let chain = Promise.resolve();
+  return (topic, buf) => { chain = chain.then(() => unseal(key, buf.toString())).then(pkt => { if (pkt) handle(topic, pkt); }); };
+}
 // A connection over a broker, with the same shape the rest of the code uses for PeerJS connections.
 class RelayConn {
-  constructor(client, pubTopic, from) {
-    this.client = client; this.pubTopic = pubTopic; this.from = from; this.open = true; this.seq = 0; this.handlers = {}; this.lastIn = 0; this.relay = true;
+  constructor(client, key, pubTopic, from) {
+    this.client = client; this.key = key; this.pubTopic = pubTopic; this.from = from; this.open = true; this.seq = 0; this.handlers = {}; this.lastIn = 0; this.relay = true;
+    this.out = Promise.resolve();
   }
   on(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn); }
   emit(ev, x) { for (const fn of this.handlers[ev] || []) fn(x); }
-  send(m) { if (this.open) this.client.publish(this.pubTopic, JSON.stringify({ from: this.from, seq: ++this.seq, m }), { qos: 1 }); }
-  // messages can arrive twice with QoS 1; drop repeats
-  receive(pkt) { if (pkt.seq <= this.lastIn) return; this.lastIn = pkt.seq; this.emit('data', pkt.m); }
+  // encryption is async too; chain it so messages go out in order
+  publish(pkt) { this.out = this.out.then(() => seal(this.key, pkt)).then(p => this.client.publish(this.pubTopic, p, { qos: 1 })).catch(() => {}); }
+  send(m) { if (this.open) this.publish({ from: this.from, seq: ++this.seq, m }); }
+  // messages can arrive twice with QoS 1, or be replayed by someone on the broker; drop repeats
+  receive(pkt) { if (!(pkt.seq > this.lastIn)) return; this.lastIn = pkt.seq; this.emit('data', pkt.m); }
   close(silent) {
     if (!this.open) return;
-    if (!silent) try { this.client.publish(this.pubTopic, JSON.stringify({ from: this.from, bye: true }), { qos: 1 }); } catch (e) {}
+    if (!silent) this.publish({ from: this.from, bye: true });
     this.open = false; this.emit('close');
   }
 }
 function relayClient(url, opts) {
   return window.mqtt.connect(url, Object.assign({ clientId: 'ud_' + rid(), connectTimeout: 8000, reconnectPeriod: 3000, clean: true }, opts || {}));
 }
+function relayUsable() { return typeof window.mqtt === 'object' && typeof crypto === 'object' && !!crypto.subtle; }
 
 // ---------- connection ----------
 const Net = MTG.Net = {
   peer: null, role: null, local: 0, hostConn: null, seatConns: {}, plan: null,
   inbox: {}, waiters: {}, onStatus: () => {}, active: false,
-  code() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 6; i++) s += a[Math.floor(Math.random() * a.length)]; return s; },
+  code() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 8; i++) s += a[Math.floor(Math.random() * a.length)]; return s; },
   available() { return typeof window.Peer === 'function' || typeof window.mqtt === 'object'; },
   get conn() { return this.role === 'host' ? Object.values(this.seatConns)[0] || null : this.hostConn; },
   reset() {
@@ -154,6 +187,7 @@ const Net = MTG.Net = {
     try { if (this.peer) this.peer.destroy(); } catch (e) {}
     for (const c of this.relayClients || []) try { c.end(true); } catch (e) {}
     clearTimeout(this._directTimer);
+    this.session = (this.session || 0) + 1; // async relay setup from a closed room checks this and stops
     this.peer = null; this.hostConn = null; this.seatConns = {}; this.active = false; this.inbox = {}; this.waiters = {}; this.relayClients = [];
   },
   // A new guest link (direct or relay) on the host
@@ -162,56 +196,62 @@ const Net = MTG.Net = {
     conn.on('close', () => this.onGuestClose(conn));
   },
   // Host: also listen on every relay broker, so guests whose direct connection fails can still join
-  hostRelay(code) {
-    if (typeof window.mqtt !== 'object') return;
-    const base = topicBase(code);
+  async hostRelay(code) {
+    if (!relayUsable()) return;
+    const session = this.session;
+    const { key, base } = await relayKeys(code);
+    const will = await seal(key, { from: 'host', bye: true });
+    if (session !== this.session) return;
     for (const url of BROKERS) {
-      const client = relayClient(url, { will: { topic: `${base}/hostbye`, payload: 'bye', qos: 1 } });
+      const client = relayClient(url, { will: { topic: `${base}/hostbye`, payload: will, qos: 1 } });
       this.relayClients.push(client);
       const links = {};
       client.on('connect', () => { client.subscribe(`${base}/h`, { qos: 1 }); if (!this.peerOpen) this.lobbyStatus(); });
-      client.on('message', (topic, buf) => {
-        let pkt; try { pkt = JSON.parse(buf.toString()); } catch (e) { return; }
-        if (!pkt || !pkt.from) return;
+      client.on('message', orderedReceiver(key, (topic, pkt) => {
+        if (typeof pkt.from !== 'string' || pkt.from === 'host') return;
         let conn = links[pkt.from];
         if (pkt.bye) { if (conn) conn.close(true); return; }
         if (!conn) {
           if (!pkt.m || pkt.m.t !== 'hello') return;
-          conn = links[pkt.from] = new RelayConn(client, `${base}/g/${pkt.from}`, 'host');
+          conn = links[pkt.from] = new RelayConn(client, key, `${base}/g/${pkt.from}`, 'host');
           this.acceptConn(conn);
         }
         conn.receive(pkt);
-      });
+      }));
     }
   },
   // Guest: connect through the first relay broker that answers
-  joinRelay(code) {
-    if (this.hostConn && this.hostConn.open) return;
-    if (typeof window.mqtt !== 'object') return this.onStatus('Could not connect directly, and the relay library is missing.');
+  async joinRelay(code) {
+    if ((this.hostConn && this.hostConn.open) || this.relayJoining) return;
+    if (!relayUsable()) return this.onStatus('Could not connect directly, and this browser can\'t use the relay.');
+    this.relayJoining = true;
     this.onStatus('A direct connection isn\'t possible on this network — connecting through a relay…');
-    const base = topicBase(code), gid = rid();
+    const session = this.session, gid = rid();
+    const { key, base } = await relayKeys(code);
+    const will = await seal(key, { from: gid, bye: true });
+    if (session !== this.session) return;
     const tryBroker = i => {
+      if (session !== this.session) return;
       if (i >= BROKERS.length) return this.onStatus('Could not reach the room. Check the code, and that the host still has the room open.');
-      const client = relayClient(BROKERS[i], { reconnectPeriod: 0, will: { topic: `${base}/h`, payload: JSON.stringify({ from: gid, bye: true }), qos: 1 } });
+      const client = relayClient(BROKERS[i], { reconnectPeriod: 0, will: { topic: `${base}/h`, payload: will, qos: 1 } });
       this.relayClients.push(client);
       let settled = false;
       client.on('error', () => { if (!settled) { settled = true; try { client.end(true); } catch (e) {} tryBroker(i + 1); } });
       client.on('connect', () => {
         if (settled) return; settled = true;
         client.options.reconnectPeriod = 3000;
-        const conn = new RelayConn(client, `${base}/h`, gid);
+        const conn = new RelayConn(client, key, `${base}/h`, gid);
         client.subscribe([`${base}/g/${gid}`, `${base}/hostbye`], { qos: 1 }, () => {
           this.useHostConn(conn);
           conn.send({ t: 'hello', v: PROTOCOL, name: this.opts.name, deck: this.opts.deck });
           // no answer from the host at all: the room doesn't exist (or the host left)
           this._helloTimer = setTimeout(() => { if (!this.gotLobby) this.onStatus('No reply from that room. Check the code, and that the host still has the room open.'); }, 12000);
         });
-        client.on('message', (topic, buf) => {
-          if (topic.endsWith('/hostbye')) { conn.close(true); return; }
-          let pkt; try { pkt = JSON.parse(buf.toString()); } catch (e) { return; }
-          if (pkt && pkt.bye) { conn.close(true); return; }
-          if (pkt) conn.receive(pkt);
-        });
+        // only messages sealed with this room's key get here; accept only the host's
+        client.on('message', orderedReceiver(key, (topic, pkt) => {
+          if (pkt.from !== 'host') return;
+          if (pkt.bye) conn.close(true); else if (topic.endsWith('/g/' + gid)) conn.receive(pkt);
+        }));
       });
       setTimeout(() => { if (!settled) { settled = true; try { client.end(true); } catch (e) {} tryBroker(i + 1); } }, 9000);
     };
@@ -267,7 +307,7 @@ const Net = MTG.Net = {
   openSeats() { return this.plan.map((s, i) => i).filter(i => this.plan[i].type === 'online' && !this.seatConns[i]); },
   lobbyStatus() {
     const rows = this.plan.map((s, i) => {
-      const who = s.type === 'host' ? `${s.name} (you)` : s.type === 'ai' ? `${s.name} (computer)` : this.seatConns[i] ? `${s.name} ✓` : '<i>waiting…</i>';
+      const who = s.type === 'host' ? `${esc(s.name)} (you)` : s.type === 'ai' ? `${esc(s.name)} (computer)` : this.seatConns[i] ? `${esc(s.name)} ✓` : '<i>waiting…</i>';
       return `Seat ${i + 1}: ${who}`;
     }).join('<br>');
     this.onStatus(`Room code: <b>${this.roomCode}</b> — send this to the other players.<br>${rows}`);
@@ -278,12 +318,13 @@ const Net = MTG.Net = {
     if (m.t === 'hello' && seat == null) {
       if (this.active) { conn.send({ t: 'error', msg: 'That game has already started.' }); return; }
       if (m.v !== PROTOCOL) { conn.send({ t: 'error', msg: 'Game versions differ — everyone needs the same version (reload the page).' }); return; }
-      const errs = MTG.validateDeck(m.deck || []);
+      if (!Array.isArray(m.deck) || m.deck.length > 250 || !m.deck.every(n => typeof n === 'string')) { conn.send({ t: 'error', msg: 'Your deck could not be read.' }); return; }
+      const errs = MTG.validateDeck(m.deck);
       if (errs.length) { conn.send({ t: 'error', msg: 'Your deck is not legal: ' + errs[0] }); return; }
       const free = this.openSeats();
       if (!free.length) { conn.send({ t: 'full' }); return; }
       const s = free[0];
-      this.seatConns[s] = conn; this.plan[s].name = m.name || `Player ${s + 1}`; this.plan[s].deck = m.deck;
+      this.seatConns[s] = conn; this.plan[s].name = String(m.name || '').trim().slice(0, 30) || `Player ${s + 1}`; this.plan[s].deck = m.deck;
       conn.send({ t: 'lobby', msg: `Joined as seat ${s + 1}. Waiting for the other players…` });
       this.lobbyStatus();
       if (!this.openSeats().length) this.beginHosted();
@@ -312,10 +353,10 @@ const Net = MTG.Net = {
 
   // Guest: join a room by code. opts: {code, name, deck, onStatus, onStart}
   join(opts) {
-    this.reset(); this.role = 'guest'; this.onStatus = opts.onStatus; this.opts = opts;
+    this.reset(); this.role = 'guest'; this.onStatus = opts.onStatus; this.opts = opts; this.relayJoining = false;
     const code = (opts.code || '').trim().toUpperCase();
     this.gotLobby = false;
-    this.onStatus('Connecting to room ' + code + '…');
+    this.onStatus('Connecting to room ' + esc(code) + '…');
     // try a direct connection first; if it hasn't opened in a few seconds, fall back to the relay
     this._directTimer = setTimeout(() => this.joinRelay(code), DIRECT_TIMEOUT);
     // ?relay=1 in the address skips the direct attempt (useful on networks known to block it, and for testing)
@@ -336,8 +377,8 @@ const Net = MTG.Net = {
   onGuestData(m) {
     if (!m || !m.t) return;
     if (m.t === 'full') return this.onStatus('That room is already full.');
-    if (m.t === 'lobby') { this.gotLobby = true; clearTimeout(this._helloTimer); return this.onStatus(m.msg + (this.hostConn && this.hostConn.relay ? ' (via relay)' : '')); }
-    if (m.t === 'error') return this.onStatus(m.msg);
+    if (m.t === 'lobby') { this.gotLobby = true; clearTimeout(this._helloTimer); return this.onStatus(esc(m.msg) + (this.hostConn && this.hostConn.relay ? ' (via relay)' : '')); }
+    if (m.t === 'error') return this.onStatus(esc(m.msg));
     if (m.t === 'start') { this.gotLobby = true; clearTimeout(this._helloTimer); this.local = m.seat; return this.startGame(m.cfg); }
     if (m.t === 'd') return this.deliver(m);
   },
@@ -366,5 +407,5 @@ const Net = MTG.Net = {
     });
   },
 };
-MTG.NetInternals = { enc, dec, encAction, decAction, stateHash, matchCandidates, LocalNetAgent, RemoteNetAgent };
+MTG.NetInternals = { relayKeys, seal, unseal, enc, dec, encAction, decAction, stateHash, matchCandidates, LocalNetAgent, RemoteNetAgent };
 })();

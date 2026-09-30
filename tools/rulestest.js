@@ -328,6 +328,15 @@ test('"Reveal until" with no match ends: Hermit Druid mills the whole library, O
   assert(lib2.length === 5, 'no creature to find: the library is unchanged');
 });
 
+test('Opal Avenger becomes a creature as soon as its controller is at 10 or less life, even with no new life loss', async () => {
+  const g = setup(); g.players[0].life = 5; const av = put(g, 0, 'Opal Avenger'); await resolveAll(g);
+  assert(g.isCreature(av) && g.pow(av) === 3 && g.tough(av) === 5, 'already at 5 life: it animates right away');
+  const g2 = setup(); const av2 = put(g2, 0, 'Opal Avenger'); await resolveAll(g2);
+  assert(!g2.isCreature(av2), 'at 20 life it stays an enchantment');
+  g2.dealDamage(null, { player: 0 }, 12); await resolveAll(g2);
+  assert(g2.isCreature(av2), 'dropping to 8 life animates it');
+});
+
 (async () => {
   let pass = 0;
   for (const t of tests) {

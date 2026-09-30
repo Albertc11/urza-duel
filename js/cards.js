@@ -163,7 +163,8 @@ const opal = (pt, subs, extra, trigOn) => ({ triggers: [{ on: 'cast', when: (g, 
 I['Opal Caryatid'] = opal([2, 2], ['Soldier']);
 I['Opal Gargoyle'] = opal([2, 2], ['Gargoyle'], { keywords: ['flying'] });
 I['Opal Archangel'] = opal([5, 5], ['Angel'], { keywords: ['flying', 'vigilance'] });
-I['Opal Avenger'] = { triggers: [{ on: 'lifeLoss', when: (g, s, ev) => ev.player === g.ctrl(s) && g.players[ev.player].life <= 10, iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes a 3/5 Soldier',
+// state trigger: fires whenever its controller is at 10 or less life, including when it enters that way
+I['Opal Avenger'] = { stateTriggers: [{ check: (g, o) => g.is(o, 'Enchantment') && g.players[g.ctrl(o)].life <= 10, iff: (g, s) => g.alive(s) && g.is(s, 'Enchantment'), text: 'becomes a 3/5 Soldier',
   resolve: (g, ctx) => { if (g.alive(src(ctx))) becomeCreature(g, src(ctx), [3, 5], ['Soldier']); } }] };
 I['Humble'] = { spell: { targets: [T.creature()], resolve: (g, ctx) => { const o = t0(ctx);
   g.addEffect({ layer: 'ability', target: o, apply: ch => { ch.noAbilities = true; ch.keywords.clear(); } });

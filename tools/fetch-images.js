@@ -4,7 +4,7 @@
 global.window = global;
 const fs = require('fs');
 const path = require('path');
-require('../js/carddata.js'); require('../js/carddata-extra.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js');
 const root = path.join(__dirname, '..');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const slug = n => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');

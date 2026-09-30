@@ -21,8 +21,17 @@ const STARTERS = {
   'Mishra\'s Engines (Artifacts)': list('8 Mountain; 8 Plains; 3 Blasted Landscape; 3 Worn Powerstone; 2 Thran Dynamo; 3 Grim Monolith; 3 Ticking Gnomes; 3 Thran War Machine; 2 Masticore; 3 Brass Secretary; 2 Mantis Engine; 2 Phyrexian Colossus; 3 Junk Diver; 3 Serra Zealot; 3 Pegasus Charger; 3 Disenchant; 3 Shower of Sparks; 3 Hopping Automaton'),
 };
 
+// Tempest-block starters: only listed when the format includes the Tempest block
+const TEMPEST_STARTERS = {
+  'Rath Sligh (R)': list('20 Mountain; 4 Jackal Pup; 4 Mogg Fanatic; 4 Raging Goblin; 4 Mogg Flunkies; 3 Fireslinger; 2 Canyon Wildcat; 3 Flowstone Wyvern; 2 Lightning Elemental; 4 Shock; 3 Kindle; 3 Searing Touch; 2 Rolling Thunder; 2 Fanning the Flames'),
+  'Soltari Knights (W)': list("20 Plains; 4 Soltari Priest; 4 Soltari Monk; 4 Soltari Foot Soldier; 3 Soltari Lancer; 3 Soltari Trooper; 3 Paladin en-Vec; 4 Youthful Knight; 2 Knight of Dawn; 2 Staunch Defenders; 2 Warrior Angel; 3 Disenchant; 2 Pacifism; 2 Hero's Resolve; 2 Serene Offering"),
+  'Dauthi Raiders (B)': list("21 Swamp; 4 Carnophage; 4 Dauthi Slayer; 4 Dauthi Horror; 3 Dauthi Marauder; 2 Dauthi Mercenary; 3 Gravedigger; 2 Screeching Harpy; 2 Kezzerdrix; 2 Serpent Warrior; 4 Dark Banishing; 3 Diabolic Edict; 2 Coercion; 2 Evincar's Justice; 2 Dark Ritual"),
+  'Rootwater Tide (U)': list('22 Island; 4 Rootwater Hunter; 3 Wind Drake; 3 Mawcor; 3 Thalakos Seer; 2 Spindrift Drake; 3 Fighting Drake; 2 Killer Whale; 2 Wayward Soul; 4 Counterspell; 3 Mana Leak; 2 Dismiss; 3 Whispers of the Muse; 2 Capsize; 2 Sift'),
+  'Skyshroud Spikes (G)': list('22 Forest; 4 Skyshroud Elite; 4 Rootwalla; 3 Spike Feeder; 3 Wall of Blossoms; 3 Wood Elves; 3 Spike Colony; 2 Trained Armodon; 2 Canopy Spider; 3 Skyshroud Troll; 2 Carnassid; 2 Spined Wurm; 2 Crashing Boars; 3 Elvish Fury; 2 Rampant Growth'),
+};
+
 // the player's own decks from magic.xlsx (js/sheetdecks.js) come first, then the built-in starters
-MTG.STARTERS = Object.assign({}, MTG.SHEET_DECKS || {}, STARTERS);
+MTG.STARTERS = Object.assign({}, MTG.SHEET_DECKS || {}, STARTERS, TEMPEST_STARTERS);
 
 // Formats: which sets' cards may be used. Cards from the spreadsheet decks ("extra") are allowed in every format.
 MTG.FORMATS = {
@@ -69,7 +78,11 @@ MTG.DeckStore = {
   key: 'urza-mtg-decks-v1',
   load() { try { return JSON.parse(localStorage.getItem(this.key)) || {}; } catch (e) { return {}; } },
   save(all) { try { localStorage.setItem(this.key, JSON.stringify(all)); return true; } catch (e) { return false; } },
-  all() { return Object.assign({}, MTG.STARTERS, this.load()); },
+  // starters are listed only when every card is in the current format; saved decks always are
+  all() {
+    const starters = Object.fromEntries(Object.entries(MTG.STARTERS).filter(([, d]) => d.every(c => MTG.inFormat(c))));
+    return Object.assign(starters, this.load());
+  },
   isStarter(name) { return !!MTG.STARTERS[name]; },
 };
 MTG.validateDeck = function (cards) {

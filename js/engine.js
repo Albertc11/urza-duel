@@ -806,31 +806,31 @@ class Game {
       return null;
     };
     let poolRef = pool;
-    const used = new Set();
+    const used = new Set(); // permanents already tapped in this plan: a land with two mana abilities can still only tap once
     const plan = [];
     const dfs = (depth) => {
       if (canPayFrom(poolRef, cost)) return true;
       if (depth > 40) return false;
       const k = need(cost);
       let cands;
-      if (k) cands = sources.filter(s => !used.has(s) && s.options.some(o => o[k] > 0));
-      else cands = sources.filter(s => !used.has(s)).slice(0, 1).concat([]); // generic: take next preferred
+      if (k) cands = sources.filter(s => !used.has(s.obj) && s.options.some(o => o[k] > 0));
+      else cands = sources.filter(s => !used.has(s.obj)).slice(0, 1).concat([]); // generic: take next preferred
       if (!k) {
         // generic: prefer sources whose mana isn't needed for colored costs; no need to branch
-        const free = sources.filter(s => !used.has(s));
+        const free = sources.filter(s => !used.has(s.obj));
         if (!free.length) return false;
         const s = free[0];
         const opt = s.options[0];
-        used.add(s); addTo(poolRef, opt); plan.push({ src: s, opt });
+        used.add(s.obj); addTo(poolRef, opt); plan.push({ src: s, opt });
         if (dfs(depth + 1)) return true;
-        used.delete(s); for (const m in opt) poolRef[m] -= opt[m]; plan.pop();
+        used.delete(s.obj); for (const m in opt) poolRef[m] -= opt[m]; plan.pop();
         return false;
       }
       for (const s of cands) {
         for (const opt of s.options.filter(o => o[k] > 0)) {
-          used.add(s); addTo(poolRef, opt); plan.push({ src: s, opt });
+          used.add(s.obj); addTo(poolRef, opt); plan.push({ src: s, opt });
           if (dfs(depth + 1)) return true;
-          used.delete(s); for (const m in opt) poolRef[m] -= opt[m]; plan.pop();
+          used.delete(s.obj); for (const m in opt) poolRef[m] -= opt[m]; plan.pop();
         }
       }
       return false;

@@ -227,7 +227,7 @@ I['Hornet Cannon'] = { abilities: [{ tap: true, cost: { mana: '{3}' }, text: 'Cr
 I['Jinxed Ring'] = { triggers: [{ on: 'toGraveyardFromBattlefield', when: (g, s, ev) => ev.obj.owner === g.ctrl(s) && !ev.obj.isToken, text: '1 damage to you', resolve: (g, ctx) => g.dealDamage(src(ctx), { player: ctx.controller }, 1) }],
   abilities: [{ cost: { sac: { filter: (g, x) => g.isCreature(x), prompt: 'Sacrifice a creature' } }, text: 'Target opponent gains control of Jinxed Ring', targets: [T.opponent()], ai: { never: true }, resolve: (g, ctx) => alive(g, src(ctx)) && g.gainControl(src(ctx), t0(ctx).player) }] };
 I['Mox Diamond'] = { spell: { beforeEnter: async (g, ctx) => { const p = ctx.controller; const l = g.players[p].hand.filter(c => c.def.types.includes('Land'));
-  const [c] = await g.chooseCards(p, l, 'Mox Diamond: discard a land card (otherwise it goes to the graveyard)', 0, 1, 'discard'); if (!c) return false; await g.discard(p, c); return true; } } };
+  const [c] = await g.chooseCards(p, l, 'Mox Diamond: discard a land card (otherwise it goes to the graveyard)', 0, 1, 'moxDiamond'); if (!c) return false; await g.discard(p, c); return true; } } };
 I['Portcullis'] = { triggers: [
   { on: 'etb', when: (g, s, ev) => ev.obj !== s && g.isCreature(ev.obj), iff: (g, s, ev) => g.creatures().filter(o => o !== ev.obj).length >= 2, text: 'exile that creature', resolve: (g, ctx) => exileWith(g, src(ctx), ctx.ev.obj) },
   reflect({ text: 'return the exiled creatures', resolve: (g, ctx) => returnExiled(g, ctx.source) })] };

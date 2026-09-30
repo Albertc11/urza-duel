@@ -192,6 +192,7 @@ class AIAgent {
       if (d.types.includes('Creature') && (isInstant && g.active !== p)) return null;
       if (d.types.includes('Creature') && d.keywords.includes('flash') && when === 'main1' && g.active === p) return { score: cmcScore - 0.5 };
       if (tag === 'none') return null;
+      if (im.aiCastIf && !im.aiCastIf(g, p, this)) return null;
       if (d.name === 'Eviscerator' && g.players[p].life <= 7) return null;
       if (d.name === 'Worship' || d.name === 'Pestilence') return { score: cmcScore + 1 };
       if (d.name === 'Covetous Dragon' && !g.perms(p, o => g.is(o, 'Artifact')).length) return null;
@@ -298,6 +299,47 @@ class AIAgent {
         const t = this.best(c, o => (o.def.supertypes.includes('Basic') ? 0 : 3) + (o.def.impl ? 2 : 0));
         return { score: cmcScore, intent: spec.count ? c.slice(0, spec.count) : [t] };
       }
+      // ----- Tempest block -----
+      case 'extraTurn': return when === 'main1' || when === 'main2' ? { score: cmcScore + 3, intent: [{ player: p }] } : null;
+      case 'sweep': { // one-sided value of a mass effect, from the card (aiSweep); positive = good for us
+        const v = im.aiSweep ? im.aiSweep(g, p, this) : 0;
+        return v >= (im.aiSweepMin || 4) ? { score: 5 + v / 2 } : null;
+      }
+      case 'bounce': {
+        const spec = (sp.targets || [])[0]; if (!spec) return null;
+        const t = this.best(this.cands(g, p, card, spec).filter(o => o.player == null && g.ctrl(o) !== p && !o.isToken || (o.isToken && this.value(g, o) >= 3)), o => this.value(g, o) + (o.isToken ? 3 : 0));
+        if (!t || this.value(g, t) < 4) return null;
+        return { score: cmcScore + 1, intent: [t] };
+      }
+      case 'regrowSpell': {
+        const c = g.players[p].graveyard.filter(x => x.def.types.includes('Creature')).sort((a, b) => this.cardValue(g, b) - this.cardValue(g, a));
+        const n = (sp.targets && sp.targets[0] && sp.targets[0].count) || 1;
+        if (c.length < n || this.cardValue(g, c[0]) < 4) return null;
+        return { score: cmcScore, intent: c.slice(0, n) };
+      }
+      case 'removalX': { // Dregs of Sorrow: X is the number of targets
+        const spec = (sp.targets || [])[0]; if (!spec) return null;
+        const good = this.oppCreatures(this.cands(g, p, card, spec), g, p).filter(o => this.value(g, o) >= 3).sort((a, b) => this.value(g, b) - this.value(g, a));
+        const x = Math.min(g.maxAffordableX(p, card), good.length);
+        return x >= 1 ? { score: 4 + 2 * x, intent: good.slice(0, x), x } : null;
+      }
+      case 'removal2': { // Reckless Spite
+        const spec = (sp.targets || [])[0]; if (!spec) return null;
+        const good = this.oppCreatures(this.cands(g, p, card, spec), g, p).filter(o => this.value(g, o) >= 3).sort((a, b) => this.value(g, b) - this.value(g, a));
+        if (good.length < 2 || g.players[p].life <= (im.aiLifeCost || 0) + 6) return null;
+        return { score: cmcScore + 3, intent: good.slice(0, 2) };
+      }
+      case 'repentance': {
+        const spec = (sp.targets || [])[0];
+        const t = this.best(this.oppCreatures(this.cands(g, p, card, spec), g, p).filter(o => g.pow(o) >= this.remaining(g, o)), o => this.value(g, o));
+        return t && this.value(g, t) >= 3 ? { score: cmcScore + 2, intent: [t] } : null;
+      }
+      case 'burnDynamic': { // damage worked out from the board (Mob Justice, Sudden Impact)
+        const dmg = im.aiDamage ? im.aiDamage(g, p, opp) : 0;
+        return dmg >= g.players[opp].life || dmg >= 4 ? { score: dmg, intent: [{ player: opp }] } : null;
+      }
+      case 'drawN': { const n = im.aiDraw ? im.aiDraw(g, p, opp) : 0; return n >= 2 ? { score: n, intent: [{ player: opp }] } : null; }
+      case 'tokens': return when === 'main2' || (when === 'main1' && this.spareMana(g, p) >= card.def.cmc + 3) ? { score: 1 } : null;
       default: return null; // counters, pumps, fogs etc. are handled at instant speed
     }
   }
@@ -457,6 +499,29 @@ class AIAgent {
         const n = c.attackers.filter(x => g.alive(x) && x.attacking && !g.isBlocked(x)).length;
         if (unblockedDmg + 2 * n >= g.players[opp].life) return a;
       }
+      // damage prevention (Anoint, Bandage, Temper): save one of our creatures that would die in this fight
+      if (im.ai === 'prevent') {
+        const shield = typeof im.aiPrevent === 'function' ? im.aiPrevent(g, p, a.card) : (im.aiPrevent || 1);
+        for (const [att, blk] of fights) {
+          const mine = g.ctrl(att) === p ? att : blk; if (!g.alive(mine) || g.ctrl(mine) !== p) continue;
+          const foes = mine.attacking ? g.blockersOf(mine) : g.attackersBlockedBy(mine);
+          const dmg = foes.reduce((s, f) => s + Math.max(0, g.pow(f)), 0);
+          if (dmg >= this.remaining(g, mine) && dmg < this.remaining(g, mine) + shield && this.value(g, mine) >= 2 && this.cands(g, p, a.card, im.spell.targets[0]).includes(mine)) {
+            this.intent = [mine]; if (im.aiPrevent === 'x') this.xIntent = dmg - this.remaining(g, mine) + 1; return a;
+          }
+        }
+      }
+      // Smite: destroy an attacker we blocked
+      if (im.ai === 'smite' && g.active !== p) {
+        const t = this.best(c.attackers.filter(x => g.alive(x) && x.attacking && g.isBlocked(x) && g.ctrl(x) !== p), o => this.value(g, o));
+        if (t && this.value(g, t) >= 3) { this.intent = [t]; return a; }
+      }
+      // Invulnerability: stop the biggest unblocked hit when it matters
+      if (im.ai === 'preventHit' && g.active !== p) {
+        const hits = c.attackers.filter(x => g.alive(x) && x.attacking && x.attackTarget === p && !g.isBlocked(x));
+        const big = this.best(hits, o => g.pow(o));
+        if (big && (g.pow(big) >= 4 || unblockedDmg >= g.players[p].life)) { this.intent = null; return a; }
+      }
       if (im.ai === 'removal' && g.active !== p) {
         // kill an attacker
         const spec = im.spell.targets[0];
@@ -510,6 +575,18 @@ class AIAgent {
           || (g.active === p ? mine.find(m => m.attacking && !g.isBlocked(m)) : null);
         if (t) { this.intent = [t]; return a; }
       }
+      if (ai.cop && when === 'combat' && g.active !== p && g.combat) { // Circle of Protection: an unblocked attacker of that kind is about to hit us
+        const hits = g.combat.attackers.filter(x => g.alive(x) && x.attacking && x.attackTarget === p && !g.isBlocked(x) && g.pow(x) >= 2 && ai.cop(g, x));
+        if (hits.length && !g.srcShields.some(s => hits.some(h => s.src === (h.uid || h.id)))) { this.intent = null; return a; }
+      }
+      if (ai.survival && when === 'eot') {
+        const hand = g.players[p].hand.filter(c => c.def.types.includes('Creature'));
+        const worst = hand.length ? Math.min(...hand.map(c => this.cardValue(g, c))) : 99;
+        const lands = this.landsInPlay(g, p);
+        if (hand.length && g.players[p].library.some(c => c.def.types.includes('Creature') && c.def.cmc <= lands + 1 && this.cardValue(g, c) > worst + 1)) return a;
+      }
+      if (ai.donate && when === 'main' && g.creatures(p).some(o => this.value(g, o) <= 2)) return a;
+      if (ai.lifeLow && (when === 'eot' || when === 'combat') && g.players[p].life <= ai.lifeLow) return a;
       if (ai.counterFriendly && when === 'eot') { const t = this.best(g.creatures(p), o => this.value(g, o)); if (t) { this.intent = [t]; return a; } }
       if (ai.growCounter && when === 'eot') return a;
       // X-cost creature search (Citanul Flute): with the opponent's turn ending, spend spare mana on the best creature X can reach
@@ -616,6 +693,7 @@ class AIAgent {
           if ((b.discard || b.discardRandom) && pl.hand.length < 5) return false;
           return true;
         }
+        if (ai.oath) return !/Discard your hand/.test(req.prompt) || g.players[p].hand.length <= 2;
         if (ai.attackTax) return this.spareMana(g, p) >= ai.attackTax + 2;
         return true;
       }
@@ -716,6 +794,7 @@ class AIAgent {
       case 'reveal': return cards.slice(0, n);
       case 'regrow': return byVal.filter(c => c.def.supported).slice(0, n);
       // Tempest block choices
+      case 'moxDiamond': return this.landsInPlay(g, p) >= 2 || cards.length >= 2 ? cards.slice(0, 1) : [];
       case 'untapChoice': return cards.slice().sort((a, b) => g.is(b, 'Land') - g.is(a, 'Land')).slice(0, n); // Static Orb: lands first
       case 'putLand': case 'keep': return cards.slice(0, n);
       case 'putBack': case 'sacrifice': return byVal.slice().reverse().slice(0, Math.max(req.min, 1)).slice(0, n); // our worst cards

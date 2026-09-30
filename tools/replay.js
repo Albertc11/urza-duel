@@ -2,7 +2,7 @@
 // Run: node tools/replay.js <report.json> [moves]    (moves: stop after that many decisions; default: all)
 // Prints whether every move replayed identically, the end of the log and the board at that point.
 global.window = global;
-for (const f of ['carddata', 'carddata-extra', 'carddata-tempest', 'engine', 'cards', 'cards2', 'cards3', 'cards-tempest', 'cards-tempest2', 'cards-tempest3', 'ai', 'sheetdecks', 'decks', 'net', 'replay'])
+for (const f of ['carddata', 'carddata-extra', 'carddata-tempest', 'engine', 'cards', 'cards2', 'cards3', 'cards-tempest', 'cards-tempest2', 'cards-tempest3', 'cards-tempest-ai', 'ai', 'sheetdecks', 'decks', 'net', 'replay'])
   require('../js/' + f + '.js');
 const M = window.MTG; M.buildDB();
 M.UI = { toast: () => {}, g: null };

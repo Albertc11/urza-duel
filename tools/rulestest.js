@@ -1,7 +1,7 @@
 // Focused rules tests for tricky cards. Each test scripts the players' choices and asserts the rule's intent.
 // Run: node tools/rulestest.js
 global.window = global;
-require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js'); require('../js/net.js'); require('../js/replay.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/cards-tempest-ai.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js'); require('../js/net.js'); require('../js/replay.js');
 const M = window.MTG; M.buildDB();
 
 // Agent that answers choices from a script, falling back to the AI.
@@ -351,6 +351,13 @@ test('A recorded game replays to the identical state (save/resume and bug report
   try { await g2.start(); } catch (e) { if (e !== STOP) throw e; }
   assert(!problem, 'replay reported: ' + problem);
   assert(M.NetInternals.stateHash(g1) === M.NetInternals.stateHash(g2) && JSON.stringify(g1.log) === JSON.stringify(g2.log), 'replayed game differs from the original');
+});
+
+test('Automatic mana payment taps each land once, even lands with two mana abilities (painlands)', async () => {
+  const g = setup(); ['Skyshroud Forest', 'Pine Barrens', 'Caldera Lake'].forEach(n => put(g, 0, n));
+  const c = hand(g, 0, 'Horned Sliver');
+  assert(await g.castSpell(0, c, {}), 'three painlands pay for {2}{G}');
+  assert(g.players[0].life === 19, 'only the land that made {G} dealt damage, life ' + g.players[0].life);
 });
 
 (async () => {

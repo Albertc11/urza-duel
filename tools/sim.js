@@ -1,6 +1,6 @@
 // Headless AI-vs-AI games to shake out engine bugs. Run: node tools/sim.js [games] [seed]
 global.window = global;
-require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/cards-tempest-ai.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
 const M = window.MTG; M.buildDB();
 // SETS=tmp,sth,exo limits random decks to those sets (plus basic lands)
 if (process.env.SETS) { M.FORMATS.test = { label: 'test', sets: process.env.SETS.split(',') }; M.getFormat = () => 'test'; }

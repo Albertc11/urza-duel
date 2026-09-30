@@ -2,7 +2,7 @@
 // engine decides its own seat with the AI and receives everyone else's decisions. All engines must stay identical.
 // Run: node tools/locksteptest.js [games]   (PLAYERS=3 for 3-player games; BREAK=1 checks a mismatch is caught)
 global.window = global;
-for (const f of ['carddata', 'carddata-extra', 'carddata-tempest', 'engine', 'cards', 'cards2', 'cards3', 'cards-tempest', 'cards-tempest2', 'cards-tempest3', 'ai', 'sheetdecks', 'decks']) require('../js/' + f + '.js');
+for (const f of ['carddata', 'carddata-extra', 'carddata-tempest', 'engine', 'cards', 'cards2', 'cards3', 'cards-tempest', 'cards-tempest2', 'cards-tempest3', 'cards-tempest-ai', 'ai', 'sheetdecks', 'decks']) require('../js/' + f + '.js');
 const M = window.MTG; M.buildDB();
 if (process.env.SETS) { M.FORMATS.test = { label: 'test', sets: process.env.SETS.split(',') }; M.getFormat = () => 'test'; }
 M.UI = { toast: m => console.log('TOAST', m) };

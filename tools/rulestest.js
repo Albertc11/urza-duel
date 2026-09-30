@@ -360,6 +360,22 @@ test('Automatic mana payment taps each land once, even lands with two mana abili
   assert(g.players[0].life === 19, 'only the land that made {G} dealt damage, life ' + g.players[0].life);
 });
 
+test('Online: malformed or hostile data from other players is rejected, legitimate answers pass', async () => {
+  const { validChoice, validCfg } = M.NetInternals;
+  const a = { id: 1 }, b = { id: 2 }, x = { id: 9 };
+  // a host's game setup: fake cards, prototype names, bad seats
+  const deck = M.STARTERS['Sligh Goblins (R)'];
+  assert(validCfg({ seed: 7, players: [{ name: 'H', deck }, { name: 'G', deck }] }, 1), 'a normal setup is accepted');
+  for (const bad of [['__proto__'], ['constructor'], ['No Such Card']]) assert(!validCfg({ seed: 7, players: [{ name: 'H', deck: bad }, { name: 'G', deck }] }, 1), 'setup with ' + bad + ' rejected');
+  assert(!validCfg({ seed: 7, players: [{ name: 'H', deck }, { name: 'G', deck }] }, 5), 'seat out of range rejected');
+  // choices: must come from what was offered
+  assert(validChoice({ type: 'target', candidates: [a, b] }, a) && !validChoice({ type: 'target', candidates: [a, b] }, x), 'target must be a candidate');
+  assert(validChoice({ type: 'cards', cards: [a, b], min: 1, max: 1 }, [b]) && !validChoice({ type: 'cards', cards: [a, b], min: 1, max: 1 }, [a, b]) && !validChoice({ type: 'cards', cards: [a, b], min: 0, max: 2 }, [a, a]), 'card picks within limits, no duplicates');
+  assert(validChoice({ type: 'number', min: 0, max: 5 }, 3) && !validChoice({ type: 'number', min: 0, max: 5 }, 2.5) && !validChoice({ type: 'number', min: 0, max: 5 }, 99), 'numbers must be whole and in range');
+  assert(!validChoice({ type: 'mode', options: ['x', 'y'], allowed: [1] }, 0) && validChoice({ type: 'mode', options: ['x', 'y'], allowed: [1] }, 1), 'only allowed modes');
+  assert(validChoice({ type: 'target', candidates: [a] }, null) && validChoice({ type: 'mode', options: ['x'] }, null), 'cancel (no answer) is always allowed');
+});
+
 (async () => {
   let pass = 0;
   for (const t of tests) {

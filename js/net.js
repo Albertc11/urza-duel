@@ -70,6 +70,39 @@ function stateHash(g) {
   return [g.turn, g.step, g.nextId, g.stack.length, pl, bf].join('#');
 }
 
+// ---------- checking what other players send ----------
+// Anything from the network is untrusted: a modified client could send any JSON. These checks keep malformed
+// or hostile data out of the engine (they don't stop a player from seeing hidden cards in their own browser).
+const MAX_MSG = 300000; // characters; real messages are far smaller (a hello with a 250-card deck is ~10k)
+const tooBig = m => { try { return JSON.stringify(m).length > MAX_MSG; } catch (e) { return true; } };
+const isCard = n => typeof n === 'string' && Object.prototype.hasOwnProperty.call(MTG.DB, n);
+// the game setup a host sends to guests
+function validCfg(cfg, seat) {
+  return !!cfg && Number.isInteger(cfg.seed) && Array.isArray(cfg.players) && cfg.players.length >= 2 && cfg.players.length <= 4 &&
+    Number.isInteger(seat) && seat >= 1 && seat < cfg.players.length &&
+    cfg.players.every(p => p && typeof p.name === 'string' && p.name.length <= 40 && Array.isArray(p.deck) && p.deck.length <= 250 && p.deck.every(isCard));
+}
+// a decoded choice must have the shape the engine asked for, and pick only from what was offered
+function validChoice(req, v) {
+  const inPool = (pool, x) => !!pool && pool.includes(x);
+  if (v == null) return true; // "no answer" = cancel / decline; the engine already handles it for every choice
+  switch (req.type) {
+    case 'target': return inPool(req.candidates, v);
+    case 'cards': {
+      if (!Array.isArray(v) || new Set(v).size !== v.length) return false;
+      const min = req.min || 0, max = req.max != null ? req.max : req.cards.length;
+      return v.length >= min && v.length <= max && v.every(x => inPool(req.cards, x));
+    }
+    case 'yesno': case 'mulligan': return typeof v === 'boolean';
+    case 'number': return Number.isInteger(v) && (req.min == null || v >= req.min) && (req.max == null || v <= req.max);
+    case 'mode': return Number.isInteger(v) && v >= 0 && v < (req.options || []).length && (!req.allowed || req.allowed.includes(v));
+    case 'color': return MTG.COLORS.includes(v);
+    case 'attackers': return (Array.isArray(v) ? v.every(x => inPool(req.candidates, x)) : v instanceof Map && [...v].every(([a, d]) => inPool(req.candidates, a) && (req.defenders || []).includes(d)));
+    case 'blockers': return v instanceof Map;
+    default: return true;
+  }
+}
+
 // ---------- agents ----------
 // A seat decided on this machine (the local human, or a computer run by the host): decide, then broadcast.
 class LocalNetAgent {
@@ -110,7 +143,9 @@ class RemoteNetAgent {
   async choose(g, p, req) {
     const msg = await this.next(g, 'c');
     if (!msg) return null;
-    return matchCandidates(req, dec(g, msg.v));
+    const v = matchCandidates(req, dec(g, msg.v));
+    if (!validChoice(req, v)) { this.net.desync(`seat ${this.idx} sent an invalid ${req.type} choice`); return null; }
+    return v;
   }
 }
 
@@ -148,7 +183,7 @@ async function unseal(key, text) {
 // Decryption is async; chain it so messages are handled in the order they arrived.
 function orderedReceiver(key, handle) {
   let chain = Promise.resolve();
-  return (topic, buf) => { chain = chain.then(() => unseal(key, buf.toString())).then(pkt => { if (pkt) handle(topic, pkt); }); };
+  return (topic, buf) => { if (!buf || buf.length > MAX_MSG * 2) return; chain = chain.then(() => unseal(key, buf.toString())).then(pkt => { if (pkt) handle(topic, pkt); }); };
 }
 // A connection over a broker, with the same shape the rest of the code uses for PeerJS connections.
 class RelayConn {
@@ -313,7 +348,7 @@ const Net = MTG.Net = {
     this.onStatus(`Room code: <b>${this.roomCode}</b> — send this to the other players.<br>${rows}`);
   },
   onHostData(conn, m) {
-    if (!m || !m.t) return;
+    if (!m || typeof m !== 'object' || !m.t || tooBig(m)) return;
     const seat = Object.keys(this.seatConns).find(k => this.seatConns[k] === conn);
     if (m.t === 'hello' && seat == null) {
       if (this.active) { conn.send({ t: 'error', msg: 'That game has already started.' }); return; }
@@ -375,11 +410,14 @@ const Net = MTG.Net = {
     });
   },
   onGuestData(m) {
-    if (!m || !m.t) return;
+    if (!m || typeof m !== 'object' || !m.t || tooBig(m)) return;
     if (m.t === 'full') return this.onStatus('That room is already full.');
     if (m.t === 'lobby') { this.gotLobby = true; clearTimeout(this._helloTimer); return this.onStatus(esc(m.msg) + (this.hostConn && this.hostConn.relay ? ' (via relay)' : '')); }
     if (m.t === 'error') return this.onStatus(esc(m.msg));
-    if (m.t === 'start') { this.gotLobby = true; clearTimeout(this._helloTimer); this.local = m.seat; return this.startGame(m.cfg); }
+    if (m.t === 'start') {
+      if (!validCfg(m.cfg, m.seat)) return this.onStatus('The host sent a game setup this version cannot use (unknown cards?). Make sure everyone has the same version, then try again.');
+      this.gotLobby = true; clearTimeout(this._helloTimer); this.local = m.seat; return this.startGame(m.cfg);
+    }
     if (m.t === 'd') return this.deliver(m);
   },
   onHostClose() {
@@ -407,5 +445,5 @@ const Net = MTG.Net = {
     });
   },
 };
-MTG.NetInternals = { relayKeys, seal, unseal, enc, dec, encAction, decAction, stateHash, matchCandidates, LocalNetAgent, RemoteNetAgent };
+MTG.NetInternals = { relayKeys, seal, unseal, enc, dec, encAction, decAction, stateHash, matchCandidates, validChoice, validCfg, LocalNetAgent, RemoteNetAgent };
 })();

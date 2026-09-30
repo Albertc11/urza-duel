@@ -516,7 +516,7 @@ const UI = MTG.UI = {
       case 'no': return this.submit(false);
       case 'num': {
         const v = +$('#numIn').value; const r = pend.req;
-        if (!(v >= r.min && v <= r.max)) return this.toast(`Choose a number from ${r.min} to ${r.max}.`);
+        if (!Number.isInteger(v) || !(v >= r.min && v <= r.max)) return this.toast(`Choose a whole number from ${r.min} to ${r.max}.`);
         return this.submit(v);
       }
       case 'attack': return this.submit((pend.req.defenders || []).length > 1 ? new Map(pend.sel.map(o => [o, pend.attackTo.get(o)])) : pend.sel.slice());

@@ -123,7 +123,7 @@ $('#startBtn').onclick = () => {
     players.push({ name, deck, human: s.type === 'human' });
   }
   show('#game');
-  MTG.UI.start({ players, onExit: () => { show('#menu'); fillDecks(); } });
+  MTG.UI.start({ players, onExit: () => { show('#menu'); fillDecks(); refreshResume(); } });
 };
 
 // ---------- online play ----------
@@ -173,15 +173,30 @@ $('#builderBtn').onclick = () => { show('#builder'); MTG.Builder.open(!isRandom(
 $('#builderBack').onclick = () => { show('#menu'); fillDecks(); };
 $('#menuBtn').onclick = () => {
   const g = MTG.UI.g;
-  if (g && !g.over && !confirm('Leave this game?')) return;
+  if (g && !g.over && !confirm(MTG.UI.online ? 'Leave this game?' : 'Leave this game? It is saved, so you can resume it from the menu.')) return;
+  MTG.UI.saveNow();
   if (MTG.UI.online) MTG.Net.reset();
   if (g) { g.over = true; g.abandoned = true; const pend = MTG.UI.pending; MTG.UI.pending = null; if (pend) pend.resolve(pend.kind === 'priority' ? { type: 'pass' } : null); }
-  MTG.UI.closeModal(); show('#menu'); fillDecks();
+  MTG.UI.closeModal(); show('#menu'); fillDecks(); refreshResume();
 };
 $('#concedeBtn').onclick = () => MTG.UI.concede();
+$('#copyLogBtn').onclick = () => MTG.UI.copyLog();
+$('#bugBtn').onclick = () => MTG.UI.bugReport();
+// resume the saved local game (replays its moves, then play continues)
+function refreshResume() {
+  const s = MTG.Replay.load();
+  $('#resumeBtn').classList.toggle('hidden', !s);
+  if (s) $('#resumeBtn').textContent = `Resume saved game (${s.players.map(p => p.name).join(' vs ')}, turn ${s.turn || 1})`;
+}
+$('#resumeBtn').onclick = () => {
+  const s = MTG.Replay.load(); if (!s) return refreshResume();
+  show('#game');
+  MTG.UI.start({ players: s.players, seed: s.seed, replay: s.decisions, onExit: () => { show('#menu'); fillDecks(); refreshResume(); } });
+};
+refreshResume();
 $('#fullControl').onchange = e => { MTG.UI.settings.fullControl = e.target.checked; };
 const supported = Object.values(MTG.DB).filter(d => d.supported).length;
-$('#menuNote').textContent = `${supported} cards playable: the Urza block plus the extra cards from your spreadsheet decks.`;
+$('#menuNote').textContent = `${supported} cards playable: the Urza and Tempest blocks plus the extra cards from your spreadsheet decks.`;
 fillDecks();
 setMode('local');
 })();

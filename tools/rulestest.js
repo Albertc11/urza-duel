@@ -1,7 +1,7 @@
 // Focused rules tests for tricky cards. Each test scripts the players' choices and asserts the rule's intent.
 // Run: node tools/rulestest.js
 global.window = global;
-require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js'); require('../js/net.js'); require('../js/replay.js');
 const M = window.MTG; M.buildDB();
 
 // Agent that answers choices from a script, falling back to the AI.
@@ -335,6 +335,22 @@ test('Opal Avenger becomes a creature as soon as its controller is at 10 or less
   assert(!g2.isCreature(av2), 'at 20 life it stays an enchantment');
   g2.dealDamage(null, { player: 0 }, 12); await resolveAll(g2);
   assert(g2.isCreature(av2), 'dropping to 8 life animates it');
+});
+
+test('A recorded game replays to the identical state (save/resume and bug reports depend on it)', async () => {
+  M.UI = M.UI || { toast: () => {} };
+  const STOP = new Error('stop'); const players = [{ name: 'A', deck: M.STARTERS['Mogg Mayhem (R)'].slice() }, { name: 'B', deck: M.STARTERS['Kor Protectors (W)'].slice() }];
+  let n = 0; const live = players.map(() => { const a = new M.AIAgent(); const ga = a.getAction.bind(a), ch = a.choose.bind(a);
+    a.getAction = async (g, p) => { if (n++ >= 150) throw STOP; return ga(g, p); }; a.choose = async (g, p, r) => { if (n++ >= 150) throw STOP; return ch(g, p, r); }; return a; });
+  const rec = M.Replay.newRecord(99, players); const w1 = M.Replay.wrapAgents(live, rec);
+  const g1 = new M.Game({ seed: 99, players: players.map((p, i) => ({ name: p.name, deck: p.deck, agent: w1.agents[i] })) });
+  try { await g1.start(); } catch (e) { if (e !== STOP) throw e; }
+  let problem = null; const stop = players.map(() => ({ getAction: async () => { throw STOP; }, choose: async () => { throw STOP; } }));
+  const w2 = M.Replay.wrapAgents(stop, M.Replay.newRecord(99, players), JSON.parse(JSON.stringify(rec.decisions)), p => { problem = p; });
+  const g2 = new M.Game({ seed: 99, players: players.map((p, i) => ({ name: p.name, deck: p.deck, agent: w2.agents[i] })) });
+  try { await g2.start(); } catch (e) { if (e !== STOP) throw e; }
+  assert(!problem, 'replay reported: ' + problem);
+  assert(M.NetInternals.stateHash(g1) === M.NetInternals.stateHash(g2) && JSON.stringify(g1.log) === JSON.stringify(g2.log), 'replayed game differs from the original');
 });
 
 (async () => {

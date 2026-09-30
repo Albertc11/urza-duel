@@ -27,6 +27,7 @@ class HumanAgent {
 }
 MTG.HumanAgent = HumanAgent;
 
+if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => MTG.UI.saveNow());
 const UI = MTG.UI = {
   g: null, viewer: 0, pending: null, humans: [true, false], passUntilTurn: null, shownFor: null, renderQueued: false,
   settings: { fullControl: false },
@@ -40,20 +41,70 @@ const UI = MTG.UI = {
     this.pending = null; this.passUntilTurn = null; this.conceding = new Set();
     this.onExit = opts.onExit;
     $('#log').innerHTML = '';
-    const agents = this.online ? this.online.agents : opts.players.map((p, i) => {
+    const base = this.online ? this.online.agents : opts.players.map((p, i) => {
       if (p.human) return new HumanAgent(this, i);
       const a = new MTG.AIAgent(); a.delay = 380; return a;
     });
+    // every game is recorded (seed + decks + decisions) for bug reports; local games also autosave for resuming
+    const seed = this.online ? this.online.seed : opts.seed != null ? opts.seed : (crypto.getRandomValues(new Uint32Array(1))[0] || 1);
+    const rec = this.rec = MTG.Replay.newRecord(seed, opts.players, { online: !!this.online });
+    this.replaying = !!(opts.replay && opts.replay.length);
+    const { agents } = MTG.Replay.wrapAgents(base, rec, opts.replay, (problem, n) => {
+      this.replaying = false; this.render();
+      this.toast(problem ? `Resumed as far as possible, but ${problem}. Play continues from there.` : `Game resumed (${n} moves restored).`);
+    });
+    if (!this.online) rec.onDecision = () => this.scheduleSave();
     const g = this.g = new MTG.Game({
-      seed: this.online ? this.online.seed : undefined,
+      seed,
       players: opts.players.map((p, i) => ({ name: p.name, deck: p.deck, agent: agents[i] })),
       onLog: m => this.addLog(m),
       onUpdate: () => this.queueRender(),
-      onStack: item => this.spotlight(item),
+      onStack: item => { if (!this.replaying) this.spotlight(item); },
     });
     this.opts = opts;
     this.render();
     g.start().then(() => { if (this.g === g && !g.abandoned) this.gameOver(); }).catch(e => { console.error(e); this.toast('Engine error: ' + e.message); });
+  },
+  // save right away (leaving the game, closing the tab)
+  saveNow() {
+    clearTimeout(this._saveTimer); this._saveTimer = null;
+    const g = this.g; if (!g || g.over || this.online || !this.rec || this.replaying) return;
+    this.rec.turn = g.turn; this.rec.savedAt = Date.now(); MTG.Replay.save(this.rec);
+  },
+  scheduleSave() {
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      const g = this.g; if (!g || g.over || this.online || !this.rec) return;
+      this.rec.turn = g.turn; this.rec.savedAt = Date.now();
+      MTG.Replay.save(this.rec);
+    }, 400);
+  },
+  copyLog() {
+    const text = this.g ? this.g.log.join('\n') : '';
+    const done = () => this.toast('Game log copied to the clipboard.');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => this.showText('Game log', text));
+    else this.showText('Game log', text);
+  },
+  bugReport() {
+    if (!this.g || !this.rec) return;
+    const m = this.modal(`<h2>Save a bug report</h2><div class="menu-note" style="text-align:left">This saves a file with the whole game so far (decks, every move and the log), so the exact moment can be replayed. Optionally describe what went wrong:</div>
+      <textarea id="bugNote" rows="4" style="width:100%" placeholder="e.g. Shard Phoenix's ability wasn't offered in my upkeep"></textarea>
+      <div class="foot"><button data-m="cancel">Cancel</button><button class="primary" data-m="save">Save report</button></div>`);
+    m.querySelector('[data-m=cancel]').onclick = () => this.closeModal();
+    m.querySelector('[data-m=save]').onclick = () => {
+      const r = MTG.Replay.report(this.g, this.rec, m.querySelector('#bugNote').value);
+      const blob = new Blob([JSON.stringify(r)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `urza-duel-bug-turn${this.g.turn}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      this.closeModal(); this.toast('Bug report saved to your downloads folder.');
+    };
+  },
+  showText(title, text) {
+    const m = this.modal(`<h2>${esc(title)}</h2><textarea rows="16" style="width:100%" readonly>${esc(text)}</textarea><div class="foot"><button class="primary" data-m="ok">Close</button></div>`);
+    m.querySelector('[data-m=ok]').onclick = () => this.closeModal();
+    m.querySelector('textarea').select();
   },
   // card names in log text become hoverable spans
   linkCards(m) {
@@ -668,6 +719,7 @@ const UI = MTG.UI = {
   },
   gameOver() {
     const g = this.g; if (g.overShown) return; g.overShown = true; this.render();
+    if (!this.online) MTG.Replay.clear(); // a finished game can't be resumed
     const w = g.winner;
     const msg = w == null ? 'Draw!' : `${g.pname(w)} wins!`;
     // online: only the host starts the rematch (it picks a new shared seed); the guest follows automatically

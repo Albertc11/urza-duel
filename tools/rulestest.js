@@ -227,6 +227,16 @@ test('Lifeline does nothing if no other creature is on the battlefield', async (
   g.emit('endStep', { player: 0 }); await resolveAll(g);
   assert(!g.battlefield.some(o => o.def.name === 'Pegasus Charger'), 'with no other creature around, it stays dead');
 });
+test('AI holds Rack and Ruin until opponents have two artifacts, so it never destroys its own', async () => {
+  for (const [enemyArts, shouldCast] of [[1, false], [2, true]]) {
+    const g = setup(); lands(g, 1, 'Mountain', 3); put(g, 1, 'Thran War Machine'); hand(g, 1, 'Rack and Ruin');
+    for (let i = 0; i < enemyArts; i++) put(g, 0, 'Thran Dynamo');
+    g.active = 1;
+    const plan = new M.AIAgent().planCast(g, 1, g.players[1].hand[0], 'main1');
+    assert(!!plan === shouldCast, `${enemyArts} enemy artifact(s): expected ${shouldCast ? 'a cast' : 'no cast'}`);
+    if (plan) assert(plan.intent.every(o => g.ctrl(o) === 0), 'both targets must be enemy artifacts');
+  }
+});
 
 (async () => {
   let pass = 0;

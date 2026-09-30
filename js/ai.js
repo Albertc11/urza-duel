@@ -233,7 +233,8 @@ class AIAgent {
         const spec = (sp.targets || [])[0]; if (!spec) return null;
         const c = this.cands(g, p, card, spec).filter(o => g.ctrl(o) !== p);
         const count = spec.count || 1;
-        if (c.length < 1) return null;
+        // Rack and Ruin / Peace and Quiet need every target: too few enemy ones means destroying our own
+        if (c.length < (spec.upTo ? 1 : count)) return null;
         const sorted = c.sort((a, b) => this.value(g, b) - this.value(g, a));
         return { score: cmcScore + 1, intent: sorted.slice(0, count) };
       }

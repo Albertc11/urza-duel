@@ -111,6 +111,7 @@ $('#format').onchange = e => {
 };
 fillFormat();
 $('#startBtn').onclick = () => {
+  if (MTG.Replay.load() && !confirm('Starting a new game replaces your saved game. Continue?')) return;
   const me = $('#p1name').value || 'Player 1';
   if (!checkDeck($('#p1deck').value, me)) return;
   const players = [{ name: me, deck: deckFor($('#p1deck').value), human: true }];

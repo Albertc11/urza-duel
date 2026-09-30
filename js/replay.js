@@ -62,7 +62,16 @@ MTG.Replay = {
   },
   // ----- save / resume (local games only) -----
   save(rec) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(rec)); return true; } catch (e) { return false; } },
-  load() { try { const r = JSON.parse(localStorage.getItem(SAVE_KEY)); return r && r.v === 1 && Array.isArray(r.decisions) ? r : null; } catch (e) { return null; } },
+  // a save that can't be used (corrupted, or cards that no longer exist) counts as no save
+  load() {
+    try {
+      const r = JSON.parse(localStorage.getItem(SAVE_KEY));
+      const has = n => typeof n === 'string' && Object.prototype.hasOwnProperty.call(MTG.DB, n);
+      const ok = r && r.v === 1 && Array.isArray(r.decisions) && Number.isInteger(r.seed) && Array.isArray(r.players) && r.players.length >= 2 && r.players.length <= 4 &&
+        r.players.every(p => p && typeof p.name === 'string' && Array.isArray(p.deck) && p.deck.length <= 250 && p.deck.every(has));
+      return ok ? r : null;
+    } catch (e) { return null; }
+  },
   clear() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} },
   // ----- bug reports -----
   report(g, rec, note) {

@@ -75,7 +75,8 @@ const UI = MTG.UI = {
     if (this._saveTimer) return;
     this._saveTimer = setTimeout(() => {
       this._saveTimer = null;
-      const g = this.g; if (!g || g.over || this.online || !this.rec) return;
+      // never save while a resume is still replaying: that would cut the saved game short
+      const g = this.g; if (!g || g.over || this.online || !this.rec || this.replaying) return;
       this.rec.turn = g.turn; this.rec.savedAt = Date.now();
       MTG.Replay.save(this.rec);
     }, 400);

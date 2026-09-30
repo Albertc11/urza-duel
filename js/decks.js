@@ -75,10 +75,10 @@ MTG.DeckStore = {
 MTG.validateDeck = function (cards) {
   const errs = [];
   if (cards.length < 60) errs.push(`Deck has ${cards.length} cards; minimum is 60.`);
-  const counts = {};
+  const counts = Object.create(null); // no prototype: a card named "__proto__" must still be counted (and rejected)
   for (const n of cards) counts[n] = (counts[n] || 0) + 1;
   for (const n in counts) {
-    const d = MTG.DB[n];
+    const d = Object.prototype.hasOwnProperty.call(MTG.DB, n) ? MTG.DB[n] : null; // names can come from other players online
     if (!d) { errs.push(`Unknown card: ${n}`); continue; }
     if (!d.supported) errs.push(`${n} is not implemented yet.`);
     if (!MTG.inFormat(n)) errs.push(`${n} isn't in the ${MTG.FORMATS[MTG.getFormat()].label} format (change the format on the main menu).`);

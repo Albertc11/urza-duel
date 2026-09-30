@@ -178,7 +178,7 @@ function relayUsable() { return typeof window.mqtt === 'object' && typeof crypto
 const Net = MTG.Net = {
   peer: null, role: null, local: 0, hostConn: null, seatConns: {}, plan: null,
   inbox: {}, waiters: {}, onStatus: () => {}, active: false,
-  code() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 8; i++) s += a[Math.floor(Math.random() * a.length)]; return s; },
+  code() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const r = crypto.getRandomValues(new Uint8Array(8)); let s = ''; for (const b of r) s += a[b % a.length]; return s; }, // 32 divides 256: unbiased
   available() { return typeof window.Peer === 'function' || typeof window.mqtt === 'object'; },
   get conn() { return this.role === 'host' ? Object.values(this.seatConns)[0] || null : this.hostConn; },
   reset() {

@@ -3,13 +3,16 @@
 // actually cast / activated / triggered, so gaps in coverage are visible.
 // Run: node tools/invariants.js [games] [seed]      (PLAYERS=2|3|4, DECKS=<regex of starter names> optional)
 global.window = global;
-require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
 const M = window.MTG; M.buildDB();
 const games = +(process.argv[2] || 20); const seed = +(process.argv[3] || 1);
 let rs = seed; const rand = () => { rs = (rs * 1103515245 + 12345) & 0x7fffffff; return rs / 0x7fffffff; };
 const COLORS = ['W', 'U', 'B', 'R', 'G'];
+// SETS=tmp,sth,exo: random decks from those sets only. FUZZ=0.3: that share of actions and choices are random legal ones.
+if (process.env.SETS) { M.FORMATS.test = { label: 'test', sets: process.env.SETS.split(',') }; M.getFormat = () => 'test'; }
+const FUZZ = +(process.env.FUZZ || 0);
 const starters = Object.keys(M.STARTERS).filter(n => !process.env.DECKS || new RegExp(process.env.DECKS).test(n));
-const pickDeck = () => rand() < 0.4 ? M.STARTERS[starters[Math.floor(rand() * starters.length)]].slice()
+const pickDeck = () => process.env.DECKS || (!process.env.SETS && rand() < 0.4) ? M.STARTERS[starters[Math.floor(rand() * starters.length)]].slice()
   : M.randomDeck(rand() < 0.3 ? [COLORS[Math.floor(rand() * 5)]] : [COLORS[Math.floor(rand() * 5)], COLORS[Math.floor(rand() * 5)]], rand);
 
 const violations = new Map(); // kind -> {count, example}
@@ -73,8 +76,27 @@ function noteUse(m) {
     decks.forEach(d => d.forEach(c => inDecks.add(c)));
     const g = new M.Game({ seed: seed * 1000 + i, players: decks.map((d, k) => {
       const a = new M.AIAgent(); a.delay = 0;
-      const inner = a.getAction.bind(a);
-      a.getAction = async (gg, p) => { res.checks++; check(gg, decks.map(x => x.length)); return inner(gg, p); };
+      const inner = a.getAction.bind(a), innerChoose = a.choose.bind(a);
+      const pick = arr => arr[Math.floor(rand() * arr.length)];
+      a.getAction = async (gg, p) => {
+        res.checks++; check(gg, decks.map(x => x.length));
+        const key = gg.turn + ':' + gg.step; if (a.fuzzKey !== key) { a.fuzzKey = key; a.fuzzN = 0; }
+        if (FUZZ && a.fuzzN < 4 && rand() < FUZZ && ++a.fuzzN) { const acts = gg.legalActions(p).filter(x => x.type !== 'mana'); if (acts.length && rand() < 0.7) { a.intent = null; return pick(acts); } }
+        return inner(gg, p);
+      };
+      // random legal answers to choices (the engine must cope with any of them)
+      a.choose = async (gg, p, req) => {
+        if (!FUZZ || rand() >= FUZZ) return innerChoose(gg, p, req);
+        switch (req.type) {
+          case 'target': return req.optional && rand() < 0.2 ? null : pick(req.candidates);
+          case 'cards': { const k = req.min + Math.floor(rand() * (Math.min(req.max, req.cards.length) - req.min + 1)); return req.cards.slice().sort(() => rand() - 0.5).slice(0, k); }
+          case 'yesno': return rand() < 0.5;
+          case 'mode': return req.allowed ? pick(req.allowed) : Math.floor(rand() * req.options.length);
+          case 'number': return req.min + Math.floor(rand() * (req.max - req.min + 1));
+          case 'color': return pick(COLORS);
+          default: return innerChoose(gg, p, req);
+        }
+      };
       return { name: 'ABCD'[k], deck: d, agent: a };
     }), onLog: m => { noteUse(m); if (m.startsWith('Illegal attack')) res.illegalAttacks++; } });
     try {

@@ -1,7 +1,9 @@
 // Headless AI-vs-AI games to shake out engine bugs. Run: node tools/sim.js [games] [seed]
 global.window = global;
-require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
 const M = window.MTG; M.buildDB();
+// SETS=tmp,sth,exo limits random decks to those sets (plus basic lands)
+if (process.env.SETS) { M.FORMATS.test = { label: 'test', sets: process.env.SETS.split(',') }; M.getFormat = () => 'test'; }
 const games = +(process.argv[2] || 20); const seed = +(process.argv[3] || 1);
 let rs = seed; const rand = () => { rs = (rs * 1103515245 + 12345) & 0x7fffffff; return rs / 0x7fffffff; };
 const colors = ['W', 'U', 'B', 'R', 'G'];
@@ -19,7 +21,7 @@ const results = { finished: 0, errors: 0, turnsTotal: 0, stalls: 0 };
     const decks = [d1, d2]; while (decks.length < n) decks.push(pickDeck(colors[Math.floor(rand() * 5)], colors[Math.floor(rand() * 5)]));
     const g = new M.Game({ seed: seed * 1000 + i, players: decks.map((d, k) => ({ name: 'ABCD'[k], deck: d, agent: new M.AIAgent() })), onLog: m => logs.push(m) });
     try {
-      const res = await Promise.race([g.start(), new Promise(r => setTimeout(() => r('TIMEOUT'), 20000 * (+(process.env.PLAYERS || 2)) / 2))]);
+      const res = await Promise.race([g.start(), new Promise(r => setTimeout(() => r("TIMEOUT"), (+process.env.STALL_MS || 20000) * (+(process.env.PLAYERS || 2)) / 2))]);
       if (res === 'TIMEOUT') { results.stalls++; g.over = true; console.log(`game ${i}: STALL turn ${g.turn} step ${g.step}`); console.log(logs.slice(-15).join('\n')); }
       else { results.finished++; results.turnsTotal += g.turn; console.log(`game ${i}: ${cs[0] + cs[1]} vs ${cs[2] + cs[3]} winner ${res == null ? 'draw' : g.pname(res)} in ${g.turn} turns (life ${g.players.map(p => p.life).join('/')})`); }
       if (process.argv[4] === 'log') console.log(logs.join('\n'));

@@ -96,6 +96,20 @@ function setCount(n) {
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 document.querySelectorAll('#countSeg button').forEach(b => b.onclick = () => setCount(+b.dataset.n));
 
+// format: Urza block only (default) or Urza + Tempest blocks
+function fillFormat() {
+  $('#format').innerHTML = Object.entries(MTG.FORMATS).map(([k, f]) => `<option value="${k}" ${k === MTG.getFormat() ? 'selected' : ''}>${esc(f.label)}</option>`).join('');
+  document.querySelectorAll('#fSet [data-fmt]').forEach(o => { o.hidden = !MTG.FORMATS[MTG.getFormat()].sets.includes(o.value); });
+}
+$('#format').onchange = e => {
+  MTG.setFormat(e.target.value); fillFormat();
+  // a selected starter that isn't in the new format goes back to the first deck
+  const all = MTG.DeckStore.all(), first = Object.keys(all)[0];
+  if (!isRandom($('#p1deck').value) && !all[$('#p1deck').value]) $('#p1deck').value = '';
+  seats.forEach(s => { if (s && s.deck && !isRandom(s.deck) && !all[s.deck]) s.deck = first; });
+  fillDecks();
+};
+fillFormat();
 $('#startBtn').onclick = () => {
   const me = $('#p1name').value || 'Player 1';
   if (!checkDeck($('#p1deck').value, me)) return;

@@ -61,6 +61,7 @@ const B = MTG.Builder = {
     const type = $('#fType').value, set = $('#fSet').value, cmc = $('#fCmc').value, playable = $('#fPlayable').checked;
     const cols = this.colors;
     return Object.values(MTG.DB).filter(d => {
+      if (!MTG.inFormat(d.name)) return false;
       if (playable && !d.supported) return false;
       if (type && !d.types.includes(type)) return false;
       if (set && !MTG.PRINTS[d.name].some(p => set === 'extra' ? p.extra : p.set === set)) return false;

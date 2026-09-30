@@ -609,6 +609,14 @@ class AIAgent {
         if (ai.abundance) return false;
         if (ai.wurm) return g.ctrl(ai.wurm) !== p && this.landsInPlay(g, p) >= 5;
         if (ai.payLife) return g.players[p].life > 8;
+        if (ai.buyback) { // keep the spell only when the extra cost is cheap for us
+          const b = ai.buyback, pl = g.players[p];
+          if (b.life && pl.life - b.life < 10) return false;
+          if (b.sacLand && this.landsInPlay(g, p) < 6) return false;
+          if ((b.discard || b.discardRandom) && pl.hand.length < 5) return false;
+          return true;
+        }
+        if (ai.attackTax) return this.spareMana(g, p) >= ai.attackTax + 2;
         return true;
       }
       case 'color': {
@@ -626,7 +634,7 @@ class AIAgent {
       case 'number': {
         if (req.reason === 'X') { const x = this.xIntent != null ? Math.min(this.xIntent, req.max) : req.max; this.xIntent = null; return x; }
         if (req.reason === 'divide') { const t = req.target; if (t && t.player == null) return Math.max(req.min, Math.min(req.max, this.remaining(g, t))); return req.min; }
-        if (req.reason === 'processor') return Math.max(0, Math.min(req.max, g.players[p].life - 12));
+        if (req.reason === 'processor' || req.reason === 'lifePay') return Math.max(0, Math.min(req.max, g.players[p].life - 12));
         return req.max;
       }
       case 'mode': {
@@ -707,6 +715,12 @@ class AIAgent {
       case 'reanimate': case 'putOntoBattlefield': return byVal.filter(c => c.def.supported).slice(0, Math.max(n, 0)).slice(0, n || 1);
       case 'reveal': return cards.slice(0, n);
       case 'regrow': return byVal.filter(c => c.def.supported).slice(0, n);
+      // Tempest block choices
+      case 'untapChoice': return cards.slice().sort((a, b) => g.is(b, 'Land') - g.is(a, 'Land')).slice(0, n); // Static Orb: lands first
+      case 'putLand': case 'keep': return cards.slice(0, n);
+      case 'putBack': case 'sacrifice': return byVal.slice().reverse().slice(0, Math.max(req.min, 1)).slice(0, n); // our worst cards
+      case 'intuition': return byVal.slice().reverse().slice(0, 1); // the opponent picks our worst card
+      case 'grimoire': return byVal.slice(0, 1); // the opponent exiles our best card
       default: return byVal.slice(0, req.min);
     }
   }

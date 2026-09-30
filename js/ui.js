@@ -526,6 +526,10 @@ const UI = MTG.UI = {
         pend.pickBlocker = null;
         return this.render();
       }
+      // say why a click did nothing (e.g. the second of two same-named creatures isn't the attacker)
+      if (r.attackers.includes(o)) return this.toast('Click one of your untapped creatures first, then the attacker it blocks.');
+      if (g.ctrl(o) !== pend.p && g.isCreature(o)) return this.toast(`${o.def.name} isn't attacking — click an attacker (red outline, ⚔ number).`);
+      if (g.ctrl(o) === pend.p && g.isCreature(o)) return this.toast(`${o.def.name} can't block${o.tapped ? ' (it is tapped)' : ' any of the attackers'}.`);
     }
     if (r.type === 'cards' && r.cards.includes(o)) return this.toggleCardSel(o);
   },

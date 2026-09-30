@@ -155,6 +155,7 @@ const UI = MTG.UI = {
     if (!acts.length) return true;
     if (top) return top.controller === p; // own spells resolve automatically; stop to respond to opponent's
     const myTurn = g.active === p;
+    if (myTurn && g.step === 'upkeep' && acts.some(a => a.graveyard)) return false; // Shard Phoenix: "activate only during your upkeep"
     if (myTurn) return !['main1', 'main2', 'declareBlockers'].includes(g.step) || (g.step === 'declareBlockers' && !acts.some(a => a.type === 'cast' || a.type === 'activate'));
     // opponent's turn: stop after attackers/blockers and at end step, if we could do something at instant speed
     const instant = acts.some(a => a.type === 'cast' || a.type === 'activate' || a.type === 'cycle');
@@ -243,7 +244,7 @@ const UI = MTG.UI = {
       <div class="zones">
         <div class="pile" title="Cards in hand">Hand<b>${pl.hand.length}</b></div>
         ${this.apertureHTML(p)}<div class="pile" title="Library">Library<b>${pl.library.length}</b></div>
-        <div class="pile ${pl.yawgTurn === g.turn ? 'playable-pile' : ''}" data-zone="graveyard" data-owner="${p}" title="${pl.yawgTurn === g.turn ? 'Yawgmoth\'s Will: click to play cards from here' : 'Click to view'}">Graveyard<b>${pl.graveyard.length}</b></div>
+        <div class="pile ${pl.yawgTurn === g.turn || this.gyActs(p).length ? 'playable-pile' : ''}" data-zone="graveyard" data-owner="${p}" title="${pl.yawgTurn === g.turn ? 'Yawgmoth\'s Will: click to play cards from here' : this.gyActs(p).length ? 'Click to use an ability of a card here' : 'Click to view'}">Graveyard<b>${pl.graveyard.length}</b></div>
         <div class="pile" data-zone="exile" data-owner="${p}" title="Click to view">Exile<b>${pl.exile.length}</b></div>
       </div>
     </div>`;
@@ -649,12 +650,15 @@ const UI = MTG.UI = {
   bindModalPreview(m, cards) {
     m.querySelectorAll('[data-mid]').forEach(el => { const c = cards.find(x => x.id === +el.dataset.mid); if (c) el.onmouseenter = () => this.preview(c.def, c); });
   },
+  // abilities usable right now from this player's graveyard (Shard Phoenix, Carrionette)
+  gyActs(p) { const pend = this.pending; return pend && pend.kind === 'priority' && pend.p === p ? this.g.legalActions(p).filter(a => a.graveyard) : []; },
   viewZone(p, zone) {
     const g = this.g, pend = this.pending;
     const cards = g.players[p][zone].slice().reverse();
-    const acts = pend && pend.kind === 'priority' && pend.p === p ? g.legalActions(p).filter(a => a.card && a.card.zone === zone) : [];
-    const m = this.modal(`<h2>${esc(g.pname(p))} — ${zone}</h2><div class="cards">${cards.length ? cards.map(c => this.modalCard(c, acts.some(a => a.card === c) ? 'playable' : '')).join('') : '<i>Empty</i>'}</div><div class="foot"><button class="primary" data-m="ok">Close</button></div>`);
-    m.querySelectorAll('[data-mid]').forEach(el => { const a = acts.find(x => x.card.id === +el.dataset.mid); if (a) el.onclick = () => { this.closeModal(); this.submit(a); }; });
+    const acts = pend && pend.kind === 'priority' && pend.p === p ? g.legalActions(p).filter(a => (a.card && a.card.zone === zone) || (a.graveyard && a.obj.zone === zone)) : [];
+    const cardOf = a => a.card || a.obj; // graveyard abilities (Shard Phoenix) carry the card as obj
+    const m = this.modal(`<h2>${esc(g.pname(p))} — ${zone}</h2><div class="cards">${cards.length ? cards.map(c => this.modalCard(c, acts.some(a => cardOf(a) === c) ? 'playable' : '')).join('') : '<i>Empty</i>'}</div><div class="foot"><button class="primary" data-m="ok">Close</button></div>`);
+    m.querySelectorAll('[data-mid]').forEach(el => { const a = acts.find(x => cardOf(x).id === +el.dataset.mid); if (a) el.onclick = () => { this.closeModal(); this.submit(a); }; });
     m.querySelector('[data-m=ok]').onclick = () => { this.closeModal(); if (this.pending && this.pending.kind === 'choice' && ['cards', 'mulligan', 'reveal', 'mode'].includes(this.pending.req.type)) this.openChoiceModal(); };
     this.bindModalPreview(m, cards);
   },

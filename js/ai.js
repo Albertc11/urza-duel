@@ -609,6 +609,14 @@ class AIAgent {
         if (ai.abundance) return false;
         if (ai.wurm) return g.ctrl(ai.wurm) !== p && this.landsInPlay(g, p) >= 5;
         if (ai.payLife) return g.players[p].life > 8;
+        if (ai.buyback) { // keep the spell only when the extra cost is cheap for us
+          const b = ai.buyback, pl = g.players[p];
+          if (b.life && pl.life - b.life < 10) return false;
+          if (b.sacLand && this.landsInPlay(g, p) < 6) return false;
+          if ((b.discard || b.discardRandom) && pl.hand.length < 5) return false;
+          return true;
+        }
+        if (ai.attackTax) return this.spareMana(g, p) >= ai.attackTax + 2;
         return true;
       }
       case 'color': {

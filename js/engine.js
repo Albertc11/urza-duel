@@ -176,6 +176,7 @@ class Game {
     this.pendingTriggers = [];
     this.shields = [];   // prevention shields
     this.srcShields = []; // "the next time a source of your choice would deal damage" shields
+    this.redirects = []; // damage redirection until end of turn (en-Kor, Kor Chant)
     this.turn = 0; this.active = 0; this.step = null; this.priority = null;
     this.combat = null;
     this.over = false; this.winner = null;
@@ -520,6 +521,7 @@ class Game {
     if (combat && this.flags.preventCombat) return 0;
     if (src && src.id && combat && this.flags['preventCombatFrom' + src.id]) return 0;
     if (src && src.zone === 'battlefield' && this.impl(src).preventDealt && this.impl(src).preventDealt(this, src, combat)) return 0;
+    if (combat && ((src && src.zone === 'battlefield' && this.c(src).flags.has('noCombatDamage')) || (target.player == null && this.c(target).flags.has('noCombatDamage')))) return 0;
     if (target.player == null) {
       if (this.protFrom(target, src)) return 0;
       if (this.impl(target).preventTaken && this.impl(target).preventTaken(this, target, combat)) return 0;
@@ -534,13 +536,29 @@ class Game {
     }
     for (const o of this.battlefield) { const im = this.impl(o); if (im.preventDamage && im.preventDamage(this, o, src, target, combat)) return 0; }
     if (src && src.zone === 'stack' && this.baseChars(src).colors.has('R')) amt += this.battlefield.filter(o => o.def.name === 'Sulfuric Vapors').length;
+    for (const o of this.battlefield) { const im = this.impl(o); if (im.modifyDamage) amt = im.modifyDamage(this, o, src, target, amt); }
     for (const sh of this.shields) {
       if (amt <= 0) break;
       if (sh.key !== tkey || sh.amount <= 0) continue;
       const n = Math.min(sh.amount, amt); sh.amount -= n; amt -= n;
+      if (sh.onPrevent) sh.onPrevent(n);
     }
     this.shields = this.shields.filter(s => s.amount > 0);
     if (amt <= 0) return 0;
+    // redirection: {match(target, src, combat), amount, to, once}
+    if (!opt.redirected) {
+      for (const r of this.redirects) {
+        if (amt <= 0) break;
+        if (r.amount <= 0 || !r.match(this, target, src, combat)) continue;
+        if (r.to.player == null && (!this.alive(r.to) || r.to.zone !== 'battlefield')) continue;
+        const n = Math.min(r.amount, amt); r.amount -= n; amt -= n;
+        if (r.once) r.amount = 0;
+        this.fx(`${n} damage is redirected to ${r.to.player != null ? this.pname(r.to.player) : r.to.def.name}.`);
+        this.dealDamage(src, r.to, n, Object.assign({}, opt, { redirected: true }));
+      }
+      this.redirects = this.redirects.filter(r => r.amount > 0);
+      if (amt <= 0) return 0;
+    }
     const sname = src ? src.def.name : 'Damage';
     if (target.player != null) {
       const p = target.player;
@@ -889,6 +907,7 @@ class Game {
       }
     }
     this.addMana(p, mana);
+    if (ab.after) await ab.after(this, o, p, mana);
     await this.afterMana(p, o, mana);
     return true;
   }
@@ -911,12 +930,14 @@ class Game {
     if (ab.oncePerTurn && o.data['used:' + (ab.text || '')] === this.turn) return false;
     if (ab.cond && !ab.cond(this, o, p)) return false;
     if (ab.sorcery && !this.canSorcery(p)) return false;
+    for (const s of this.battlefield) { const im = this.impl(s); if (im.forbidActivate && im.forbidActivate(this, s, p, o, ab)) return false; }
     return true;
   }
   canSorcery(p) { return this.active === p && (this.step === 'main1' || this.step === 'main2') && this.stack.length === 0; }
   isInstantSpeed(card) { const d = card.def; return d.types.includes('Instant') || d.keywords.includes('flash'); }
   canCastTiming(p, card) {
     if (this.isInstantSpeed(card)) return true;
+    if (this.battlefield.some(s => this.impl(s).flashFor && this.impl(s).flashFor(this, s, p, card))) return true; // Aluren, Rootwater Shaman
     return this.canSorcery(p);
   }
   totalCost(card, x = 0) {
@@ -973,7 +994,14 @@ class Game {
     }
     if (sp && sp.addCost && sp.addCost.sacrifice && !this.perms(p, o => sp.addCost.sacrifice.filter(this, o)).length) return false;
     if (this.isFreeCast(p, card)) return true;
+    if (this.altCostsFor(p, card).length) return true;
     return this.canAfford(p, this.totalCost(card, 0), null, true);
+  }
+  // alternative ways to pay for a spell offered by permanents: [{label, pay: async () => bool}]
+  altCostsFor(p, card) {
+    const out = [];
+    for (const s of this.battlefield) { const im = this.impl(s); const a = im.altCost && im.altCost(this, s, p, card); if (a) out.push(a); }
+    return out;
   }
   // Human-readable reason a card in hand can't be played right now, plus the permanent responsible (if any).
   whyNotPlayable(p, card) {
@@ -1034,12 +1062,22 @@ class Game {
       const im = card.def.impl || {};
       if (im.handAbilities) for (const [i, ab] of im.handAbilities.entries()) if (this.canActivate(p, card, ab)) acts.push({ type: 'activate', obj: card, idx: i, ab, hand: true });
     }
+    // abilities that work from the graveyard (Carrionette, Shard Phoenix)
+    for (const card of pl.graveyard) {
+      const im = card.def.impl || {};
+      if (im.graveyardAbilities) for (const [i, ab] of im.graveyardAbilities.entries()) {
+        if (!this.canActivate(p, card, Object.assign({ fromGraveyard: true }, ab))) continue;
+        if (ab.cost && ab.cost.mana && !this.canAfford(p, this.abilityManaCost(ab, 0))) continue;
+        if (ab.targets && ab.targets.some(s => !s.upTo && !this.targetCandidates(s, { controller: p, source: card }, card).length)) continue;
+        acts.push({ type: 'activate', obj: card, idx: i, ab: Object.assign({ fromGraveyard: true }, ab), graveyard: true });
+      }
+    }
     for (const o of this.battlefield) {
       const mine = this.ctrl(o) === p;
       for (const [i, ab] of this.activatedAbilities(o).entries()) {
         if (!mine && !ab.anyPlayer) continue;
         if (!this.canActivate(p, o, ab)) continue;
-        if (ab.cost && ab.cost.mana && !this.canAfford(p, this.abilityManaCost(ab, 0), ab.tap ? [o] : null)) continue;
+        if (ab.cost && ab.cost.mana && !this.canAfford(p, this.abilityManaCost(ab, 0, o), ab.tap ? [o] : null)) continue;
         if (ab.cost && ab.cost.sac && !this.perms(p, x => ab.cost.sac.filter(this, x, o)).length) continue;
         if (ab.cost && ab.cost.discard && !this.players[p].hand.filter(c => !ab.cost.discard.filter || ab.cost.discard.filter(this, c)).length) continue;
         if (ab.cost && ab.cost.tapCreature && !this.perms(p, x => this.isCreature(x) && !x.tapped && (!ab.cost.tapCreature.notSelf || x !== o)).length) continue;
@@ -1059,8 +1097,10 @@ class Game {
     for (const g of (ch.grantedAbilities || [])) out.push(g);
     return out;
   }
-  abilityManaCost(ab, x) {
-    const c = parseCost(ab.cost.mana); c.generic += (c.X || 0) * x; c.X = 0; return c;
+  abilityManaCost(ab, x, o) {
+    const c = parseCost(ab.cost.mana); c.generic += (c.X || 0) * x; c.X = 0;
+    if (o) for (const s of this.battlefield) { const im = this.impl(s); if (im.abilityCostMod) im.abilityCostMod(this, s, o, ab, c); }
+    return c;
   }
 
   async performAction(p, act) {
@@ -1107,7 +1147,7 @@ class Game {
     }
     // X
     if (card.def.costObj.X) {
-      const maxX = this.maxAffordableX(p, card);
+      const maxX = Math.min(this.maxAffordableX(p, card), sp.maxX ? sp.maxX(this, p, card) : 99);
       const x = await this.ask(p, { type: 'number', prompt: 'Choose X', min: 0, max: maxX, card, reason: 'X' });
       if (x == null) return false;
       ctx.x = x;
@@ -1120,8 +1160,34 @@ class Game {
     }
     if (sp.afterTargets && (await sp.afterTargets(this, ctx)) === false) return false;
     const free = opts.free || this.isFreeCast(p, card);
-    const cost = free ? parseCost('') : this.totalCost(card, ctx.x);
+    let cost = free ? parseCost('') : this.totalCost(card, ctx.x);
+    const pl = this.players[p];
+    // alternative costs from permanents (Dream Halls, Aluren)
+    let alt = null;
+    if (!free) {
+      const alts = this.altCostsFor(p, card);
+      if (alts.length) {
+        const affordable = this.canAfford(p, cost, null, true);
+        const labels = (affordable ? ['Pay the mana cost'] : []).concat(alts.map(a => a.label));
+        const i = labels.length === 1 ? 0 : await this.ask(p, { type: 'mode', prompt: `How do you want to cast ${card.def.name}?`, options: labels, card, reason: 'altCost' });
+        if (i == null) return false;
+        const ai = affordable ? i - 1 : i;
+        if (ai >= 0) { alt = alts[ai]; cost = parseCost(''); }
+      }
+    }
+    // buyback (optional additional cost): the spell returns to its owner's hand as it resolves
+    if (sp.buyback) {
+      const b = sp.buyback, bm = parseCost(b.mana || '');
+      for (const o of this.battlefield) if (this.impl(o).buybackDiscount) bm.generic = Math.max(0, bm.generic - 2);
+      const withB = Object.assign({}, cost); for (const k in bm) withB[k] += bm[k];
+      const others = pl.hand.filter(c => c !== card).length;
+      const payable = (!b.sacLand || this.perms(p, o => this.is(o, 'Land')).length) && (!b.discard || others >= b.discard)
+        && (!b.life || pl.life >= b.life) && (!b.discardRandom || others >= 1);
+      const desc = [b.mana && MTG.costToStr(bm), b.sacLand && 'sacrifice a land', b.discard && `discard ${b.discard} cards`, b.life && `pay ${b.life} life`, b.discardRandom && 'discard a card at random'].filter(Boolean).join(', ');
+      if (payable && this.canAfford(p, withB, null, true) && await this.yesno(p, `Pay buyback (${desc}) for ${card.def.name}?`, { buyback: b })) { ctx.buyback = true; cost = withB; }
+    }
     if (!this.canAfford(p, cost, null, true)) return false;
+    if (alt && !(await alt.pay())) return false;
     // additional costs
     if (sp.addCost && sp.addCost.sacrifice) {
       const cands = this.perms(p, o => sp.addCost.sacrifice.filter(this, o));
@@ -1132,7 +1198,14 @@ class Game {
       if (!(await this.payMana(p, cost, [pick], true))) return false;
       this.sacrifice(pick);
     } else if (!(await this.payMana(p, cost, null, true))) return false;
-    if (sp.addCost && sp.addCost.custom) await sp.addCost.custom(this, ctx);
+    if (ctx.buyback) {
+      const b = sp.buyback;
+      if (b.sacLand) { const l = await this.choosePerm(p, this.perms(p, o => this.is(o, 'Land')), 'Sacrifice a land (buyback)', 'sacrifice', false); if (l) this.sacrifice(l); }
+      if (b.discard) { const picks = await this.chooseCards(p, pl.hand.filter(c => c !== card), `Discard ${b.discard} cards (buyback)`, b.discard, b.discard, 'discard'); for (const c of picks) await this.discard(p, c); }
+      if (b.discardRandom) { const h = pl.hand.filter(c => c !== card); if (h.length) await this.discard(p, h[Math.floor(this.rand() * h.length)]); }
+      if (b.life) this.loseLife(p, b.life);
+    }
+    if (sp.addCost && sp.addCost.custom && (await sp.addCost.custom(this, ctx)) === false) return false;
     // put on stack
     this.removeFrom(card);
     card.zone = 'stack';
@@ -1140,8 +1213,9 @@ class Game {
     ctx.selfItem = item;
     this.pushStack(item);
     this.players[p].spellsCast++;
+    if (card.def.types.includes('Creature')) this.players[p].creatureSpellsCast = (this.players[p].creatureSpellsCast || 0) + 1;
     if (card.def.types.includes('Creature') && this.tempEffects.some(x => x.until === 'creatureCast')) { this.tempEffects = this.tempEffects.filter(x => x.until !== 'creatureCast'); this.bump(); }
-    this.say(`${this.pname(p)} casts ${card.def.name}${ctx.x ? ' (X=' + ctx.x + ')' : ''}${this.describeTargets(ctx)}.`);
+    this.say(`${this.pname(p)} casts ${card.def.name}${ctx.x ? ' (X=' + ctx.x + ')' : ''}${ctx.buyback ? ' with buyback' : ''}${alt ? ' (' + alt.label + ')' : ''}${this.describeTargets(ctx)}.`);
     this.emit('cast', { item, card, player: p });
     this.emitTargeted(ctx);
     return true;
@@ -1167,7 +1241,7 @@ class Game {
     const ctx = { g: this, controller: p, source: o, targets: [], data: {}, x: 0 };
     if (ab.xFrom) ctx.x = ab.xFrom(this, o);
     if (ab.cost && ab.cost.mana && /X/.test(ab.cost.mana)) {
-      let max = 0; while (max < 30 && this.canAfford(p, this.abilityManaCost(ab, max + 1), ab.tap ? [o] : null)) max++;
+      let max = 0; while (max < 30 && this.canAfford(p, this.abilityManaCost(ab, max + 1, o), ab.tap ? [o] : null)) max++;
       const x = await this.ask(p, { type: 'number', prompt: 'Choose X', min: 0, max, reason: 'X' });
       if (x == null) return false; ctx.x = x;
     }
@@ -1196,7 +1270,7 @@ class Game {
     if (cost.life && this.players[p].life < (typeof cost.life === 'function' ? cost.life(this, p) : cost.life) && !cost.lifeAny) return false;
     if (cost.mana) {
       const excl = [o]; if (sacPick) excl.push(sacPick); if (tapPick) excl.push(tapPick);
-      if (!(await this.payMana(p, this.abilityManaCost(ab, ctx.x), excl))) return false;
+      if (!(await this.payMana(p, this.abilityManaCost(ab, ctx.x, o), excl))) return false;
     }
     if (ab.tap) this.tap(o);
     if (ab.untapCost) this.untap(o);
@@ -1245,7 +1319,12 @@ class Game {
       if (!this.isPermanentCard(card)) {
         const res = item.mode ? item.mode.resolve : sp.resolve;
         if (res) await res(this, ctx);
-        if (!item.exiled) this.finishSpell(item, sp.exileSelf ? 'exile' : 'graveyard');
+        if (!item.exiled) {
+          if (ctx.buyback) this.fx(`${card.def.name} returns to ${this.pname(card.owner)}'s hand (buyback).`);
+          this.finishSpell(item, ctx.buyback ? 'hand' : sp.exileSelf ? 'exile' : 'graveyard');
+        }
+      } else if (sp.beforeEnter && (await sp.beforeEnter(this, ctx)) === false) {
+        this.finishSpell(item, 'graveyard'); // e.g. Mox Diamond without a land discarded
       } else {
         const opt = { controller: item.controller };
         if (card.def.enchant) opt.attachTo = ctx.targets[0];
@@ -1436,6 +1515,11 @@ class Game {
       while (this.extraTurns.length && this.players[this.extraTurns[0]].lost) this.extraTurns.shift();
       if (this.extraTurns.length) this.active = this.extraTurns.shift();
       else this.active = this.nextPlayer(this.active);
+      // Meditate: "you skip your next turn"
+      for (let i = 0; i < this.players.length && this.players[this.active].skipTurns > 0; i++) {
+        this.players[this.active].skipTurns--; this.say(`${this.pname(this.active)} skips their turn.`);
+        this.active = this.nextPlayer(this.active);
+      }
     }
     this.bump(); this.onUpdate();
     return this.winner;
@@ -1465,7 +1549,7 @@ class Game {
     const ap = this.active, pl = this.players[ap];
     pl.lastTurnStart = this.turn;
     pl.landsPlayed = 0;
-    for (const x of this.players) { x.spellsCast = 0; x.damagedThisTurn = false; }
+    for (const x of this.players) { x.spellsCast = 0; x.creatureSpellsCast = 0; x.damagedThisTurn = false; }
     this.flags = {};
     this.say(`— Turn ${this.turn}: ${pl.name} —`);
     for (const step of STEPS) {
@@ -1489,14 +1573,23 @@ class Game {
           const i = await this.ask(ap, { type: 'mode', prompt: 'Storage Matrix: choose the type of permanent to untap', options: types, reason: 'storageMatrix' });
           onlyType = types[i || 0];
         }
+        let toUntap = [];
         for (const o of this.perms(ap)) {
           if (onlyType && !this.is(o, onlyType)) continue;
           const im = this.impl(o);
           if (im.noUntap && im.noUntap(this, o)) continue;
           if (o.data.skipUntap) { o.data.skipUntap--; continue; }
           if (this.untapLock(o)) continue;
-          if (im.mayNotUntap && o.tapped && !(await this.yesno(ap, `Untap ${o.def.name}?`, { untap: o }))) continue;
-          if (o.tapped) { o.tapped = false; o.data.whileTapped = null; }
+          if (o.tapped) toUntap.push(o);
+        }
+        const limits = this.battlefield.filter(s => !s.tapped && this.impl(s).untapLimit).map(s => this.impl(s).untapLimit);
+        if (limits.length && toUntap.length > Math.min(...limits)) {
+          const n = Math.min(...limits);
+          toUntap = await this.chooseCards(ap, toUntap, `Static Orb: choose up to ${n} permanents to untap`, 0, n, 'untapChoice');
+        }
+        for (const o of toUntap) {
+          if (this.impl(o).mayNotUntap && !(await this.yesno(ap, `Untap ${o.def.name}?`, { untap: o }))) continue;
+          o.tapped = false; o.data.whileTapped = null;
         }
         this.bump();
         return; // no priority in untap (502.4)
@@ -1566,12 +1659,14 @@ class Game {
   }
   async cleanup() {
     const ap = this.active, pl = this.players[ap];
-    const max = this.perms(ap, o => this.impl(o).noMaxHand).length ? Infinity : 7;
+    let max = this.perms(ap, o => this.impl(o).noMaxHand).length ? Infinity : 7;
+    for (const o of this.perms(ap)) { const im = this.impl(o); if (im.maxHand) max = Math.min(max, im.maxHand(this, o)); }
     if (pl.hand.length > max) await this.chooseDiscard(ap, pl.hand.length - max, { prompt: `Discard down to ${max} cards` });
     for (const o of this.battlefield) { o.damage = 0; o.regen = 0; o.data.damagedBy = null; }
     this.tempEffects = this.tempEffects.filter(e => e.until !== 'eot');
     this.shields = [];
     this.srcShields = [];
+    this.redirects = [];
     this.emit('cleanup', {});
     this.bump();
     // 514.3a: if triggers happened, players get priority and another cleanup step follows
@@ -1627,11 +1722,21 @@ class Game {
       targets = new Map();
       if (ans instanceof Map) { for (const [o, d] of ans) if (cands.includes(o)) targets.set(o, defenders.includes(d) ? d : defenders[0]); }
       else for (const o of (ans || [])) if (cands.includes(o)) targets.set(o, defenders[0]);
+      // "attacks this turn if able" (Imps' Taunt, Bullwhip): added automatically
+      for (const o of cands) if (o.data.mustAttackTurn === this.turn && !targets.has(o)) targets.set(o, defenders[0]);
       chosen = [...targets.keys()];
       const err = this.attackError(chosen, cands, targets);
       if (!err) break;
       this.say('Illegal attack: ' + err);
       if (tries === 4) { chosen = []; targets = new Map(); }
+    }
+    // attack costs (Propaganda): pay, or those attackers don't attack
+    let tax = 0; const taxed = [];
+    for (const s of this.battlefield) { const im = this.impl(s); if (!im.attackTax) continue; for (const o of chosen) { const n = im.attackTax(this, s, o, targets.get(o)); if (n > 0) { tax += n; taxed.push(o); } } }
+    if (tax > 0) {
+      const cost = parseCost('{' + tax + '}');
+      if (this.canAfford(ap, cost) && await this.yesno(ap, `Pay {${tax}} so your creatures can attack?`, { attackTax: tax }) && await this.payMana(ap, cost)) this.say(`${this.pname(ap)} pays {${tax}} to attack.`);
+      else { chosen = chosen.filter(o => !taxed.includes(o)); if (taxed.length) this.say(`${this.pname(ap)} doesn't pay, so ${[...new Set(taxed)].map(o => o.def.name).join(', ')} can't attack.`); }
     }
     for (const o of chosen) {
       o.attacking = true; o.attackTarget = targets.get(o); o.data.attackedTurn = this.turn;
@@ -1670,7 +1775,9 @@ class Game {
     if (cb.flags.has('cantBlock')) return false;
     for (const s of this.battlefield) { const im = this.impl(s); if (im.cantBlock && im.cantBlock(this, s, b)) return false; }
     if (ca.keywords.has('flying') && !cb.keywords.has('flying') && !cb.keywords.has('reach')) return false;
-    if (ca.keywords.has('shadow') !== cb.keywords.has('shadow')) return false;
+    if (ca.keywords.has('shadow') && !cb.keywords.has('shadow') && !cb.flags.has('blockShadow')) return false;
+    if (!ca.keywords.has('shadow') && cb.keywords.has('shadow')) return false;
+    if (a.data.cantBlockBy && a.data.cantBlockBy.turn === this.turn && a.data.cantBlockBy.ids.includes(b.id)) return false;
     if (ca.keywords.has('fear') && !cb.types.has('Artifact') && !cb.colors.has('B')) return false;
     if (ca.flags.has('unblockable')) return false;
     if (this.protFrom(a, b)) return false;
@@ -1683,7 +1790,7 @@ class Game {
     if (imb.canBlockOnly && !imb.canBlockOnly(this, b, a)) return false;
     return true;
   }
-  maxBlocks(b) { return this.c(b).flags.has('blockAny') ? 99 : 1; }
+  maxBlocks(b) { const ch = this.c(b); return ch.flags.has('blockAny') ? 99 : 1 + (ch.extraBlocks || 0) + (b.data.extraBlocksTurn === this.turn ? b.data.extraBlocks || 0 : 0); }
   async declareBlockers() {
     const allAttackers = this.combat.attackers.filter(a => this.alive(a));
     const blocks = new Map(); // blocker -> [attackers], for all defending players
@@ -1710,6 +1817,7 @@ class Game {
     for (const a of attackers) {
       const bl = this.combat.blocks.get(a.id);
       if (bl && bl.length) this.emit('becomesBlocked', { obj: a, blockers: bl.map(id => this.byId(id)).filter(Boolean) });
+      else this.emit('unblocked', { obj: a });
     }
     this.bump();
   }
@@ -1735,6 +1843,15 @@ class Game {
       const cur = blocks.get(b) || [];
       if (!cur.includes(a)) blocks.set(b, this.maxBlocks(b) > cur.length ? cur.concat(a) : [a]);
     }
+    for (const b of cands) {
+      const req = b.data.mustBlock && b.data.mustBlock.turn === this.turn ? b.data.mustBlock : (this.impl(b).mustBlock ? { attacker: null } : null);
+      if (!req) continue;
+      const want = req.attacker != null ? attackers.find(a => a.id === req.attacker && this.canBlock(b, a)) : null;
+      if (want) { const cur = blocks.get(b) || []; if (!cur.includes(want)) blocks.set(b, [want]); continue; }
+      if (blocks.has(b)) continue;
+      const any = attackers.find(a => this.canBlock(b, a));
+      if (any) blocks.set(b, [any]);
+    }
     return blocks;
   }
   blockError(blocks, attackers) {
@@ -1744,6 +1861,7 @@ class Game {
       if (n === 1 && this.has(a, 'menace')) return `${a.def.name} can't be blocked except by two or more creatures.`;
       const im = this.impl(a);
       if (n > 0 && im.minBlockers && n < im.minBlockers) return `${a.def.name} can't be blocked except by ${im.minBlockers} or more creatures.`;
+      if (im.maxBlockers && n > im.maxBlockers) return `${a.def.name} can't be blocked by more than ${im.maxBlockers} creature${im.maxBlockers > 1 ? 's' : ''}.`;
     }
     return null;
   }

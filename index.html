@@ -20,6 +20,7 @@
       <div class="seg" id="countSeg"><button data-n="2" class="on">2</button><button data-n="3">3</button><button data-n="4">4</button></div>
     </div>
     <div class="menu-row"><label for="p1name">Your name</label><input type="text" id="p1name" value="Player 1"></div>
+    <div class="menu-row"><label for="format">Format</label><select id="format"></select></div>
     <div class="menu-row"><label for="p1deck">Your deck</label><select id="p1deck"></select></div>
     <div id="seats"></div>
     <div class="online-only hidden">
@@ -44,7 +45,7 @@
       <input type="text" id="fText" placeholder="Search name / text…" size="18">
       <div class="colorfilter" id="fColors"></div>
       <select id="fType"><option value="">All types</option><option>Creature</option><option>Instant</option><option>Sorcery</option><option>Enchantment</option><option>Artifact</option><option>Land</option></select>
-      <select id="fSet"><option value="">All sets</option><option value="usg">Urza's Saga</option><option value="ulg">Urza's Legacy</option><option value="uds">Urza's Destiny</option><option value="extra">Other sets</option></select>
+      <select id="fSet"><option value="">All sets</option><option value="usg">Urza's Saga</option><option value="ulg">Urza's Legacy</option><option value="uds">Urza's Destiny</option><option value="tmp" data-fmt="tempest">Tempest</option><option value="sth" data-fmt="tempest">Stronghold</option><option value="exo" data-fmt="tempest">Exodus</option><option value="extra">Other sets</option></select>
       <select id="fCmc"><option value="">Any cost</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option value="6">6+</option></select>
       <label><input type="checkbox" id="fPlayable" checked> Playable only</label>
       <span id="poolCount" class="menu-note" style="margin:0"></span>

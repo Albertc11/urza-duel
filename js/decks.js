@@ -24,11 +24,23 @@ const STARTERS = {
 // the player's own decks from magic.xlsx (js/sheetdecks.js) come first, then the built-in starters
 MTG.STARTERS = Object.assign({}, MTG.SHEET_DECKS || {}, STARTERS);
 
+// Formats: which sets' cards may be used. Cards from the spreadsheet decks ("extra") are allowed in every format.
+MTG.FORMATS = {
+  urza: { label: 'Urza block', sets: ['usg', 'ulg', 'uds'] },
+  tempest: { label: 'Urza + Tempest blocks', sets: ['usg', 'ulg', 'uds', 'tmp', 'sth', 'exo'] },
+};
+MTG.getFormat = () => { try { const f = localStorage.getItem('urza-format'); if (MTG.FORMATS[f]) return f; } catch (e) {} return 'urza'; };
+MTG.setFormat = f => { try { localStorage.setItem('urza-format', f); } catch (e) {} };
+MTG.inFormat = (name, fmt) => {
+  const sets = MTG.FORMATS[fmt || MTG.getFormat()].sets;
+  return (MTG.PRINTS[name] || []).some(p => p.extra || sets.includes(p.set)) || !!(MTG.DB[name] && MTG.DB[name].supertypes.includes('Basic'));
+};
+
 // Random playable deck from supported cards of the given colors (used for the AI's "random" choice and for tests).
 MTG.randomDeck = function (colors, rand) {
   rand = rand || Math.random;
   colors = [...new Set(colors)];
-  const pool = Object.values(MTG.DB).filter(d => d.supported && !d.types.includes('Land') &&
+  const pool = Object.values(MTG.DB).filter(d => d.supported && !d.types.includes('Land') && MTG.inFormat(d.name) &&
     d.colors.every(c => colors.includes(c)) && (d.colors.length || d.types.includes('Artifact')) &&
     (!d.impl || d.impl.ai !== 'none') && !['Worship', 'Pestilence', 'Tinker', 'Donate', 'Show and Tell', 'Lotus Blossom', 'Metalworker'].includes(d.name) &&
     !(d.impl && d.impl.spell && !d.impl.ai && !MTG.isPermanentDef(d)));
@@ -69,6 +81,7 @@ MTG.validateDeck = function (cards) {
     const d = MTG.DB[n];
     if (!d) { errs.push(`Unknown card: ${n}`); continue; }
     if (!d.supported) errs.push(`${n} is not implemented yet.`);
+    if (!MTG.inFormat(n)) errs.push(`${n} isn't in the ${MTG.FORMATS[MTG.getFormat()].label} format (change the format on the main menu).`);
     if (counts[n] > 4 && !d.supertypes.includes('Basic')) errs.push(`${n}: more than 4 copies.`);
   }
   return errs;

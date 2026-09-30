@@ -345,7 +345,7 @@ class Game {
     if (zone === 'battlefield') {
       n.controller = opt.controller != null ? opt.controller : (opt.keepController ? o.controller : owner);
       n.controlledSince = this.turn;
-      n.tapped = !!opt.tapped || !!o.def.entersTapped;
+      n.tapped = !!opt.tapped || !!o.def.entersTapped || this.forcedTapped(o.def);
       if (o.def.echo) n.echoPending = true;
       const im = o.def.impl || {};
       if (im.entersWith) im.entersWith(this, n);
@@ -436,6 +436,8 @@ class Game {
     const label = type === 'p1p1' ? '+1/+1' : type === 'm1m1' ? '-1/-1' : type;
     if (n > 0) this.fx(`${o.def.name} gets ${n} ${label} counter${n > 1 ? 's' : ''} (now ${(o.counters[type] || 0) + n}).`);
     o.counters[type] = (o.counters[type] || 0) + n; if (o.counters[type] <= 0) delete o.counters[type]; this.bump(); }
+  // Root Maze: "Artifacts and lands enter tapped."
+  forcedTapped(def) { return this.battlefield.some(s => this.impl(s).entersTappedFor && this.impl(s).entersTappedFor(this, s, def)); }
   attachedTo(o) { return o.attachedTo ? this.battlefield.find(x => x.id === o.attachedTo) || null : null; }
   aurasOn(o) { return this.battlefield.filter(a => a.attachedTo === o.id); }
   enchanted(o) { return this.aurasOn(o).some(a => this.is(a, 'Enchantment')); }
@@ -929,6 +931,7 @@ class Game {
     if (ab.untapCost && !o.tapped) return false;
     if (ab.oncePerTurn && o.data['used:' + (ab.text || '')] === this.turn) return false;
     if (ab.cond && !ab.cond(this, o, p)) return false;
+    if (this.flags['noActivate' + o.id] && !ab.options) return false; // Interdict
     if (ab.sorcery && !this.canSorcery(p)) return false;
     for (const s of this.battlefield) { const im = this.impl(s); if (im.forbidActivate && im.forbidActivate(this, s, p, o, ab)) return false; }
     return true;
@@ -1045,7 +1048,7 @@ class Game {
     if (!host || host.zone !== 'battlefield') return false;
     const spec = this.auraSpec(a);
     if (!spec.filter(this, host, { controller: this.ctrl(a) })) return false;
-    if (this.protFrom(host, a)) return false;
+    if (this.protFrom(host, a) && !this.impl(a).protOK) return false; // Flickering Ward
     return true;
   }
 
@@ -1350,7 +1353,7 @@ class Game {
     const owner = card.owner;
     const n = this.makeObj(card.def, owner, 'battlefield');
     n.uid = card.uid || card.id;
-    n.controller = opt.controller; n.controlledSince = this.turn; n.tapped = !!card.def.entersTapped;
+    n.controller = opt.controller; n.controlledSince = this.turn; n.tapped = !!card.def.entersTapped || this.forcedTapped(card.def);
     if (card.def.echo) n.echoPending = true;
     if (opt.attachTo) n.attachedTo = opt.attachTo.id;
     card.zone = 'moved'; card.newer = n;
@@ -1377,6 +1380,7 @@ class Game {
   counterItem(item, opt = {}) {
     const i = this.stack.indexOf(item);
     if (i < 0) return false;
+    if (item.kind === 'spell' && (item.card.def.impl || {}).uncounterable) { this.say(`${item.text} can't be countered.`); return false; }
     this.stack.splice(i, 1);
     this.say(`${item.text} is countered.`);
     if (item.kind === 'spell') {

@@ -1,7 +1,7 @@
 // Focused rules tests for tricky cards. Each test scripts the players' choices and asserts the rule's intent.
 // Run: node tools/rulestest.js
 global.window = global;
-require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
 const M = window.MTG; M.buildDB();
 
 // Agent that answers choices from a script, falling back to the AI.

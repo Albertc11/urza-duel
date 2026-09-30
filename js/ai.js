@@ -634,7 +634,7 @@ class AIAgent {
       case 'number': {
         if (req.reason === 'X') { const x = this.xIntent != null ? Math.min(this.xIntent, req.max) : req.max; this.xIntent = null; return x; }
         if (req.reason === 'divide') { const t = req.target; if (t && t.player == null) return Math.max(req.min, Math.min(req.max, this.remaining(g, t))); return req.min; }
-        if (req.reason === 'processor') return Math.max(0, Math.min(req.max, g.players[p].life - 12));
+        if (req.reason === 'processor' || req.reason === 'lifePay') return Math.max(0, Math.min(req.max, g.players[p].life - 12));
         return req.max;
       }
       case 'mode': {

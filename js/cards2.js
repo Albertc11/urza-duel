@@ -548,4 +548,6 @@ I['Umbilicus'] = { triggers: [eachUpkeep({ text: 'pay 2 life or return a permane
   if (g.players[p].life >= 2 && await g.yesno(p, 'Umbilicus: pay 2 life? (otherwise return a permanent to hand)', { payLife: 2 })) { g.loseLife(p, 2); return; }
   const o = await g.choosePerm(p, perms, 'Return a permanent you control to its owner\'s hand', 'bounceOwn', false); if (o) g.bounce(o); } })] };
 I['Whetstone'] = { abilities: [{ cost: { mana: '{3}' }, text: 'Each player mills two cards', ai: { never: true }, resolve: g => g.livePlayers().forEach(p => g.mill(p, 2)) }] };
+// shared with the Tempest block cards
+Object.assign(MTG.CardKit, { chooseOpponent, mayCounter, ctr, revealColor, enchantedUpkeep, payOr, chooseAny, sacrificeAny, reorderTop, tutorTo, putAuraOnto, chooseAuraHost, uidOf, mostLands });
 })();

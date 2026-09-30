@@ -2,7 +2,7 @@
 // (AI makes the choices), then play two turns so its triggers fire. Reports exceptions and hangs.
 // Run: node tools/cardtest.js [filter]
 global.window = global;
-require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
 const M = window.MTG; M.buildDB();
 const filter = process.argv[2] ? new RegExp(process.argv[2], 'i') : null;
 const LANDS = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
@@ -72,7 +72,8 @@ async function testCard(name, seed) {
 }
 
 (async () => {
-  const names = Object.keys(M.DB).filter(n => !filter || filter.test(n)).sort();
+  const sets = process.env.SET ? process.env.SET.split(',') : null; // e.g. SET=tmp,sth,exo
+  const names = Object.keys(M.DB).filter(n => (!filter || filter.test(n)) && (!sets || sets.includes(M.DB[n].set))).sort();
   let bad = 0;
   for (const [i, n] of names.entries()) {
     const { errors, logs } = await testCard(n, 1000 + i);

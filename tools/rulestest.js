@@ -308,6 +308,16 @@ test('Furnace of Rath doubles damage to creatures and players', async () => {
   const g = setup(); put(g, 0, 'Furnace of Rath'); g.dealDamage(null, { player: 1 }, 3); assert(g.players[1].life === 14, 'life ' + g.players[1].life);
 });
 
+test('Spells whose number of targets is X work when X is 1 (Rolling Thunder, Dregs of Sorrow)', async () => {
+  const g = setup([{ number: (g, req) => req.reason === 'X' ? 1 : undefined, target: (g, req) => req.candidates.find(c => c.def && c.def.name === 'Albino Troll') }, {}]);
+  lands(g, 0, 'Mountain', 3); const troll = put(g, 1, 'Albino Troll');
+  await g.castSpell(0, hand(g, 0, 'Rolling Thunder'), {}); await resolveAll(g);
+  assert(troll.damage === 1, 'Rolling Thunder with X=1 deals 1 damage, got ' + troll.damage);
+  const g2 = setup([{ number: (g, req) => req.reason === 'X' ? 1 : undefined }, {}]); lands(g2, 0, 'Swamp', 6); put(g2, 1, 'Albino Troll');
+  await g2.castSpell(0, hand(g2, 0, 'Dregs of Sorrow'), {}); await resolveAll(g2);
+  assert(!g2.battlefield.some(o => o.def.name === 'Albino Troll') && g2.players[0].hand.length === 1, 'Dregs X=1 destroys one creature and draws one card');
+});
+
 (async () => {
   let pass = 0;
   for (const t of tests) {

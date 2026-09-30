@@ -723,7 +723,8 @@ class Game {
         chosen.push(pick);
       }
       if (!spec.upTo && chosen.length < (spec.min != null ? spec.min : count)) return false;
-      ctx.targets[i] = (count > 1 || spec.upTo) ? chosen : chosen[0];
+      // X-dependent target counts (Rolling Thunder, Dregs of Sorrow) always give a list, even when X is 1
+      ctx.targets[i] = (count > 1 || spec.upTo || typeof spec.count === 'function') ? chosen : chosen[0];
     }
     return true;
   }

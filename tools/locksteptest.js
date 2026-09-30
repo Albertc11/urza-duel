@@ -4,6 +4,7 @@
 global.window = global;
 for (const f of ['carddata', 'carddata-extra', 'carddata-tempest', 'engine', 'cards', 'cards2', 'cards3', 'cards-tempest', 'cards-tempest2', 'cards-tempest3', 'ai', 'sheetdecks', 'decks']) require('../js/' + f + '.js');
 const M = window.MTG; M.buildDB();
+if (process.env.SETS) { M.FORMATS.test = { label: 'test', sets: process.env.SETS.split(',') }; M.getFormat = () => 'test'; }
 M.UI = { toast: m => console.log('TOAST', m) };
 require('../js/net.js');
 const { stateHash, LocalNetAgent, RemoteNetAgent } = M.NetInternals;

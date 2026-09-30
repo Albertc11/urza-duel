@@ -318,6 +318,16 @@ test('Spells whose number of targets is X work when X is 1 (Rolling Thunder, Dre
   assert(!g2.battlefield.some(o => o.def.name === 'Albino Troll') && g2.players[0].hand.length === 1, 'Dregs X=1 destroys one creature and draws one card');
 });
 
+test('"Reveal until" with no match ends: Hermit Druid mills the whole library, Oath of Druids leaves it alone', async () => {
+  const g = setup(); const lib = g.players[0].library; lib.length = 0; for (let i = 0; i < 5; i++) lib.push(g.makeObj(M.DB['Albino Troll'], 0, 'library'));
+  lands(g, 0, 'Forest', 1); const d = put(g, 0, 'Hermit Druid');
+  await g.activate(0, d, d.def.impl.abilities[0]); await resolveAll(g);
+  assert(lib.length === 0 && g.players[0].graveyard.length === 5, 'no basic land: all five cards go to the graveyard');
+  const g2 = setup([{ yesno: () => true }, {}]); const lib2 = g2.players[0].library; lib2.length = 0; for (let i = 0; i < 5; i++) lib2.push(g2.makeObj(M.DB['Forest'], 0, 'library'));
+  put(g2, 0, 'Oath of Druids'); put(g2, 1, 'Albino Troll'); g2.emit('upkeep', { player: 0 }); await resolveAll(g2);
+  assert(lib2.length === 5, 'no creature to find: the library is unchanged');
+});
+
 (async () => {
   let pass = 0;
   for (const t of tests) {

@@ -45,11 +45,13 @@ const reflect = x => Object.assign({ on: 'leaves', leaves: true, when: (g, s, ev
 // "Look at / reveal until": reveal cards from the top until test passes. Returns [found|null, others]
 function revealUntil(g, p, test) {
   const lib = g.players[p].library, others = [];
-  while (lib.length) { const c = lib[lib.length - 1]; if (test(c)) { g.say(`${g.pname(p)} reveals ${[...others.map(o => o.def.name), c.def.name].join(', ')}.`); return [c, others]; } others.push(c); lib.pop(); lib.unshift(c); }
-  // nothing found: put the looked-at cards back on top in the same order
-  for (const c of others) { lib.splice(lib.indexOf(c), 1); lib.push(c); }
-  if (others.length) g.say(`${g.pname(p)} reveals ${others.map(o => o.def.name).join(', ')}.`);
-  return [null, others];
+  for (let i = lib.length - 1; i >= 0; i--) { // top of the library is the end of the array
+    const c = lib[i];
+    if (test(c)) { g.say(`${g.pname(p)} reveals ${[...others.map(o => o.def.name), c.def.name].join(', ')}.`); return [c, others]; }
+    others.push(c);
+  }
+  if (others.length) g.say(`${g.pname(p)} reveals ${others.map(o => o.def.name).join(', ')} (no match).`);
+  return [null, others]; // nothing matched: every card was revealed; the caller decides where they go
 }
 // cards exiled "with" a permanent (Wall of Nets, Portcullis, Cold Storage): stored on the permanent's data
 const exileWith = (g, s, o) => { if (!alive(g, o)) return; const n = g.exile(o); if (n) (s.data.exiled = s.data.exiled || []).push(uidOf(n)); };
@@ -105,7 +107,7 @@ I['Pegasus Refuge'] = { abilities: [{ cost: { mana: '{2}', discard: {} }, text: 
   resolve: (g, ctx) => g.createToken(ctx.controller, { name: 'Pegasus', subtypes: ['Pegasus'], colors: ['W'], power: 1, toughness: 1, keywords: ['flying'] }) }] };
 I['Repentance'] = { spell: { targets: [T.creature()], resolve: (g, ctx) => g.dealDamage(t0(ctx), t0(ctx), g.pow(t0(ctx))) }, ai: 'none' };
 I['Sacred Guide'] = { abilities: [{ cost: { mana: '{1}{W}', sacSelf: true }, text: 'Reveal until a white card; put it into your hand', ai: { never: true },
-  resolve: (g, ctx) => { const [c, rest] = revealUntil(g, ctx.controller, x => x.def.colors.includes('W')); if (c) { rest.forEach(x => g.exile(x)); g.moveTo(c, 'hand'); } } }] };
+  resolve: (g, ctx) => { const [c, rest] = revealUntil(g, ctx.controller, x => x.def.colors.includes('W')); rest.forEach(x => g.exile(x)); if (c) g.moveTo(c, 'hand'); } }] };
 I['Safeguard'] = { abilities: [{ cost: { mana: '{2}{W}' }, text: 'Prevent all combat damage target creature would deal this turn', targets: [T.creature()], ai: { never: true }, resolve: (g, ctx) => { g.flags['preventCombatFrom' + t0(ctx).id] = true; } }] };
 I['Serene Offering'] = { spell: { targets: [T.enchantment()], resolve: (g, ctx) => { const n = t0(ctx).def.cmc; g.destroy(t0(ctx)); g.gainLife(ctx.controller, n); } }, ai: 'removeArtEnch' };
 I['Soltari Crusader'] = { abilities: [pumpSelf('{1}{W}', 1, 0)] };

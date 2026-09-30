@@ -12,7 +12,7 @@ const COLORS = ['W', 'U', 'B', 'R', 'G'];
 if (process.env.SETS) { M.FORMATS.test = { label: 'test', sets: process.env.SETS.split(',') }; M.getFormat = () => 'test'; }
 const FUZZ = +(process.env.FUZZ || 0);
 const starters = Object.keys(M.STARTERS).filter(n => !process.env.DECKS || new RegExp(process.env.DECKS).test(n));
-const pickDeck = () => !process.env.SETS && rand() < 0.4 ? M.STARTERS[starters[Math.floor(rand() * starters.length)]].slice()
+const pickDeck = () => process.env.DECKS || (!process.env.SETS && rand() < 0.4) ? M.STARTERS[starters[Math.floor(rand() * starters.length)]].slice()
   : M.randomDeck(rand() < 0.3 ? [COLORS[Math.floor(rand() * 5)]] : [COLORS[Math.floor(rand() * 5)], COLORS[Math.floor(rand() * 5)]], rand);
 
 const violations = new Map(); // kind -> {count, example}

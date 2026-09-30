@@ -715,6 +715,12 @@ class AIAgent {
       case 'reanimate': case 'putOntoBattlefield': return byVal.filter(c => c.def.supported).slice(0, Math.max(n, 0)).slice(0, n || 1);
       case 'reveal': return cards.slice(0, n);
       case 'regrow': return byVal.filter(c => c.def.supported).slice(0, n);
+      // Tempest block choices
+      case 'untapChoice': return cards.slice().sort((a, b) => g.is(b, 'Land') - g.is(a, 'Land')).slice(0, n); // Static Orb: lands first
+      case 'putLand': case 'keep': return cards.slice(0, n);
+      case 'putBack': case 'sacrifice': return byVal.slice().reverse().slice(0, Math.max(req.min, 1)).slice(0, n); // our worst cards
+      case 'intuition': return byVal.slice().reverse().slice(0, 1); // the opponent picks our worst card
+      case 'grimoire': return byVal.slice(0, 1); // the opponent exiles our best card
       default: return byVal.slice(0, req.min);
     }
   }

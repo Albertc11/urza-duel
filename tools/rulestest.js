@@ -1,7 +1,7 @@
 // Focused rules tests for tricky cards. Each test scripts the players' choices and asserts the rule's intent.
 // Run: node tools/rulestest.js
 global.window = global;
-require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
+require('../js/carddata.js'); require('../js/carddata-extra.js'); require('../js/carddata-tempest.js'); require('../js/engine.js'); require('../js/cards.js'); require('../js/cards2.js'); require('../js/cards3.js'); require('../js/cards-tempest.js'); require('../js/cards-tempest2.js'); require('../js/cards-tempest3.js'); require('../js/ai.js'); require('../js/sheetdecks.js'); require('../js/decks.js');
 const M = window.MTG; M.buildDB();
 
 // Agent that answers choices from a script, falling back to the AI.
@@ -236,6 +236,76 @@ test('AI holds Rack and Ruin until opponents have two artifacts, so it never des
     assert(!!plan === shouldCast, `${enemyArts} enemy artifact(s): expected ${shouldCast ? 'a cast' : 'no cast'}`);
     if (plan) assert(plan.intent.every(o => g.ctrl(o) === 0), 'both targets must be enemy artifacts');
   }
+});
+
+// ---------- Tempest block ----------
+test('Buyback returns the spell to its owner\'s hand; without buyback it goes to the graveyard', async () => {
+  for (const pay of [true, false]) {
+    const g = setup([{ yesno: (g, req) => req.ai && req.ai.buyback ? pay : undefined }, {}]); lands(g, 0, 'Island', 6);
+    const w = hand(g, 0, 'Whispers of the Muse'); await g.castSpell(0, w, {}); await resolveAll(g);
+    const inHand = g.players[0].hand.some(c => c.def.name === 'Whispers of the Muse'), inGy = g.players[0].graveyard.some(c => c.def.name === 'Whispers of the Muse');
+    assert(pay ? inHand && !inGy : inGy && !inHand, `buyback ${pay}: hand ${inHand}, graveyard ${inGy}`);
+    assert(g.battlefield.filter(o => o.tapped).length === (pay ? 6 : 1), 'buyback costs {5} more');
+  }
+});
+test('Painlands deal 1 damage only for colored mana; slow lands skip their next untap', async () => {
+  const g = setup(); const lake = put(g, 0, 'Caldera Lake'); lake.tapped = false;
+  const abs = g.manaAbilitiesOf(lake); const colored = abs.find(a => a.after), colorless = abs.find(a => !a.after);
+  await g.activateManaAbility(0, lake, colorless); assert(g.players[0].life === 20, 'colorless mana is free');
+  lake.tapped = false; await g.activateManaAbility(0, lake, colored, M.parseCost('{U}')); assert(g.players[0].life === 19, 'colored mana costs 1 life');
+  const marsh = put(g, 0, 'Cinder Marsh'); await g.activateManaAbility(0, marsh, g.manaAbilitiesOf(marsh).find(a => a.after), M.parseCost('{B}'));
+  await g.runStep('untap'); assert(marsh.tapped, 'Cinder Marsh stays tapped the next untap step');
+  await g.runStep('untap'); assert(!marsh.tapped, 'and untaps the one after');
+});
+test('Shadow creatures can only be blocked by shadow creatures or ones like Heartwood Dryad', async () => {
+  const g = setup(); const horror = put(g, 0, 'Dauthi Marauder'); const bear = put(g, 1, 'Pegasus Charger'); const dryad = put(g, 1, 'Heartwood Dryad'); const soltari = put(g, 1, 'Soltari Foot Soldier');
+  assert(!g.canBlock(bear, horror), 'a normal creature can\'t block shadow');
+  assert(g.canBlock(dryad, horror), 'Heartwood Dryad can block shadow');
+  assert(g.canBlock(soltari, horror), 'shadow blocks shadow');
+  assert(!g.canBlock(soltari, put(g, 0, 'Goblin Patrol')), 'a shadow creature can\'t block a normal one');
+});
+test('en-Kor redirects the next 1 damage to another creature you control', async () => {
+  const g = setup(); const nomads = put(g, 0, 'Nomads en-Kor'); const other = put(g, 0, 'Albino Troll');
+  await g.activate(0, nomads, nomads.def.impl.abilities[0]); await resolveAll(g);
+  g.dealDamage(null, nomads, 2);
+  assert(nomads.damage === 1 && other.damage === 1, `expected 1/1 split, got ${nomads.damage}/${other.damage}`);
+});
+test('"Blocks if able" forces the block even when the defender declares none', async () => {
+  const g = setup([{}, { blockers: () => new Map() }]); const armodon = put(g, 0, 'Trumpeting Armodon'); const b = put(g, 1, 'Albino Troll');
+  b.data.mustBlock = { turn: g.turn, attacker: armodon.id };
+  g.combat = { attackers: [armodon], blocks: new Map(), blockerOf: new Map(), dealtFirst: new Set(), blocked: new Set() }; armodon.attacking = true; armodon.attackTarget = 1;
+  await g.declareBlockers(); assert(g.blockersOf(armodon).includes(b), 'the target must block the Armodon');
+});
+test('Static Orb lets each player untap only two permanents', async () => {
+  const g = setup(); put(g, 1, 'Static Orb'); const ls = [0, 1, 2, 3].map(() => put(g, 0, 'Forest')); ls.forEach(o => { o.tapped = true; });
+  await g.runStep('untap'); assert(ls.filter(o => !o.tapped).length === 2, 'exactly two untap');
+});
+test('Propaganda: attackers stay home unless their controller pays {2} each', async () => {
+  const g = setup([{ attackers: (g, req) => req.candidates, yesno: (g, req) => req.ai && req.ai.attackTax ? true : undefined }, {}]); put(g, 1, 'Propaganda'); const a = put(g, 0, 'Albino Troll');
+  g.step = 'declareAttackers'; g.combat = { attackers: [], blocks: new Map(), blockerOf: new Map(), dealtFirst: new Set(), blocked: new Set() };
+  await g.declareAttackers(); assert(!a.attacking, 'no mana: no attack');
+  lands(g, 0, 'Forest', 2); a.tapped = false; await g.declareAttackers(); assert(a.attacking, 'paid {2}: attacks');
+});
+test('Aluren lets any player cast small creatures for free at instant speed', async () => {
+  const g = setup(); put(g, 0, 'Aluren'); const c = hand(g, 1, 'Albino Troll'), big = hand(g, 1, 'Spined Wurm');
+  assert(g.castable(1, c), 'opponent can cast a 2-drop with no lands during our turn');
+  assert(!g.castable(1, big), 'but not a 5-drop');
+});
+test('Mox Diamond goes to the graveyard unless a land card is discarded', async () => {
+  for (const withLand of [false, true]) {
+    const g = setup([{ cards: (g, req) => req.cards.slice(0, 1) }, {}]); const mox = hand(g, 0, 'Mox Diamond'); if (withLand) hand(g, 0, 'Forest');
+    await g.castSpell(0, mox, {}); await resolveAll(g);
+    const onField = g.battlefield.some(o => o.def.name === 'Mox Diamond');
+    assert(onField === withLand, `with land ${withLand}: on battlefield ${onField}`);
+    if (withLand) assert(g.players[0].graveyard.some(c => c.def.name === 'Forest'), 'the land was discarded');
+  }
+});
+test('Humility makes creatures 1/1 with no abilities', async () => {
+  const g = setup(); put(g, 0, 'Humility'); const r = put(g, 1, 'Shivan Raptor');
+  assert(g.pow(r) === 1 && g.tough(r) === 1 && !g.has(r, 'first strike'), `got ${g.pow(r)}/${g.tough(r)}`);
+});
+test('Furnace of Rath doubles damage to creatures and players', async () => {
+  const g = setup(); put(g, 0, 'Furnace of Rath'); g.dealDamage(null, { player: 1 }, 3); assert(g.players[1].life === 14, 'life ' + g.players[1].life);
 });
 
 (async () => {

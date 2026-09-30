@@ -407,7 +407,7 @@ class Game {
     if (this.impl(o).indestructible) { this.fx(`${o.def.name} is indestructible.`); return false; }
     if (!opt.noRegen && o.regen > 0 && !this.flags['noRegen' + o.id]) {
       o.regen--; o.tapped = true; o.damage = 0; if (this.combat) this.removeFromCombat(o);
-      this.say(`${o.def.name} regenerates.`); this.bump(); return false;
+      this.say(`${o.def.name} regenerates.`); this.bump(); this.emit('regenerated', { obj: o }); return false;
     }
     this.moveTo(o, 'graveyard'); return true;
   }
@@ -1589,7 +1589,7 @@ class Game {
         const limits = this.battlefield.filter(s => !s.tapped && this.impl(s).untapLimit).map(s => this.impl(s).untapLimit);
         if (limits.length && toUntap.length > Math.min(...limits)) {
           const n = Math.min(...limits);
-          toUntap = await this.chooseCards(ap, toUntap, `Static Orb: choose up to ${n} permanents to untap`, 0, n, 'untapChoice');
+          toUntap = (await this.chooseCards(ap, toUntap, `Static Orb: choose up to ${n} permanents to untap`, 0, n, 'untapChoice')).slice(0, n);
         }
         for (const o of toUntap) {
           if (this.impl(o).mayNotUntap && !(await this.yesno(ap, `Untap ${o.def.name}?`, { untap: o }))) continue;
@@ -1733,6 +1733,12 @@ class Game {
       if (!err) break;
       this.say('Illegal attack: ' + err);
       if (tries === 4) { chosen = []; targets = new Map(); }
+    }
+    // Exalted Dragon: "can't attack unless you sacrifice a land"
+    for (const o of chosen.filter(x => this.impl(x).attackSacLand)) {
+      const lands = this.perms(ap, x => this.is(x, 'Land'));
+      const l = lands.length ? await this.choosePerm(ap, lands, `Sacrifice a land so ${o.def.name} can attack`, 'sacrifice', true) : null;
+      if (l) this.sacrifice(l); else { chosen = chosen.filter(x => x !== o); this.say(`${o.def.name} can't attack without a land being sacrificed.`); }
     }
     // attack costs (Propaganda): pay, or those attackers don't attack
     let tax = 0; const taxed = [];

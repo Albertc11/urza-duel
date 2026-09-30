@@ -329,6 +329,8 @@ const UI = MTG.UI = {
       inner += `<div class="pt ${tone}">${ch.power}/${ch.toughness}</div>`;
       if (o.damage) inner += `<div class="dmg">${o.damage}</div>`;
       if (g.sick(o) && g.active === g.ctrl(o)) inner += `<div class="sick" title="Summoning sick">💤</div>`;
+      const lock = o.tapped && g.untapLock(o);
+      if (lock) inner += `<div class="locked" title="Doesn't untap: ${esc(lock.def.name)}">🔒</div>`;
       const kws = [...ch.keywords].filter(k => !o.def.keywords.includes(k)).concat([...ch.prot].filter(x => !o.def.protections.includes(x)).map(x => 'pro ' + (MTG.COLOR_NAME[x] || x)));
       if (kws.length) inner += `<div class="kw">${kws.map(k => `<span>${esc(k)}</span>`).join('')}</div>`;
     }
@@ -587,7 +589,8 @@ const UI = MTG.UI = {
     let badge = '';
     if (c.zone === 'battlefield') {
       const mine = this.g.ctrl(c) === this.viewer;
-      badge = `<div class="ownerbadge ${mine ? 'mine' : 'theirs'}">${mine ? 'Yours' : 'Opponent\'s'}${c.tapped ? ' · tapped' : ''}</div>`;
+      const lock = c.tapped && this.g.untapLock(c);
+      badge = `<div class="ownerbadge ${mine ? 'mine' : 'theirs'}">${mine ? 'Yours' : 'Opponent\'s'}${c.tapped ? (lock ? ' · locked 🔒' : ' · tapped') : ''}</div>`;
     }
     return `<div class="card handcard ${cls || ''}${img ? '' : ' textonly'}" data-mid="${c.id}" ${img ? `style="background-image:url('${img}')"` : ''}>${img ? '' : this.textFrame(c.def)}${badge}</div>`;
   },

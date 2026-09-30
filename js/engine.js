@@ -303,6 +303,8 @@ class Game {
     if (this.has(o, 'haste')) return false;
     return o.controlledSince >= this.players[this.ctrl(o)].lastTurnStart;
   }
+  // the permanent (Somnophore, Mana Leech, Back to Basics...) stopping o from untapping, if any
+  untapLock(o) { return this.battlefield.find(s => this.impl(s).preventUntap && this.impl(s).preventUntap(this, s, o)) || null; }
   protFrom(o, src) {
     const pr = this.c(o).prot;
     if (!pr.size || !src) return false;
@@ -1492,7 +1494,7 @@ class Game {
           const im = this.impl(o);
           if (im.noUntap && im.noUntap(this, o)) continue;
           if (o.data.skipUntap) { o.data.skipUntap--; continue; }
-          if (this.battlefield.some(s => this.impl(s).preventUntap && this.impl(s).preventUntap(this, s, o))) continue;
+          if (this.untapLock(o)) continue;
           if (im.mayNotUntap && o.tapped && !(await this.yesno(ap, `Untap ${o.def.name}?`, { untap: o }))) continue;
           if (o.tapped) { o.tapped = false; o.data.whileTapped = null; }
         }

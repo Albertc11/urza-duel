@@ -36,8 +36,8 @@ const B = MTG.Builder = {
     const pv = document.createElement('div'); pv.id = 'bpreview'; pv.className = 'hidden'; document.body.appendChild(pv);
   },
   refreshDeckSelect() {
-    const all = MTG.DeckStore.all();
-    $('#deckSelect').innerHTML = Object.keys(all).map(n => `<option ${n === this.originalName ? 'selected' : ''} value="${esc(n)}">${esc(n)}${MTG.DeckStore.isStarter(n) ? ' (starter)' : ''}</option>`).join('');
+    const all = MTG.DeckStore.all(), saved = MTG.DeckStore.load();
+    $('#deckSelect').innerHTML = Object.keys(all).map(n => `<option ${n === this.originalName ? 'selected' : ''} value="${esc(n)}">${esc(n)}${MTG.DeckStore.isStarter(n) ? (saved[n] ? ' (starter, edited)' : ' (starter)') : ''}</option>`).join('');
   },
   loadDeck(name) {
     const all = MTG.DeckStore.all();
@@ -135,16 +135,19 @@ const B = MTG.Builder = {
     $('#curve').innerHTML = curve.map((v, i) => `<div style="height:${(v / max) * 100}%"><em>${v || ''}</em><span>${i === 6 ? '6+' : i}</span></div>`).join('');
     const errs = MTG.validateDeck(this.deck.cards);
     $('#deckerrors').innerHTML = errs.map(esc).join('<br>');
-    $('#deleteDeck').disabled = !this.originalName || MTG.DeckStore.isStarter(this.originalName);
+    const edited = !!this.originalName && !!MTG.DeckStore.load()[this.originalName];
+    $('#deleteDeck').disabled = !edited;
+    $('#deleteDeck').textContent = edited && MTG.DeckStore.isStarter(this.originalName) ? 'Restore original' : 'Delete';
   },
   save(asCopy) {
     let name = (this.deck.name || '').trim();
     if (!name) return this.flash('Give the deck a name first.');
-    if (MTG.DeckStore.isStarter(name) || asCopy) {
-      name = prompt('Save deck as:', MTG.DeckStore.isStarter(name) || asCopy ? name + ' (copy)' : name);
+    if (asCopy) {
+      name = prompt('Save deck as:', name + ' (copy)');
       if (!name) return;
-      if (MTG.DeckStore.isStarter(name)) return this.flash("That name belongs to a starter deck.");
     }
+    // a saved deck with a starter's name replaces that starter (Delete restores the original)
+    if (MTG.DeckStore.isStarter(name) && name !== this.originalName && !confirm(`Replace the starter deck "${name}" with this deck?`)) return;
     const all = MTG.DeckStore.load();
     if (this.originalName && this.originalName !== name && !asCopy && all[this.originalName] && !MTG.DeckStore.isStarter(this.originalName)) delete all[this.originalName];
     all[name] = this.deck.cards.slice();
@@ -155,9 +158,11 @@ const B = MTG.Builder = {
   },
   del() {
     const name = this.originalName;
-    if (!name || MTG.DeckStore.isStarter(name)) return;
-    if (!confirm(`Delete deck "${name}"?`)) return;
+    if (!name || !MTG.DeckStore.load()[name]) return;
+    const starter = MTG.DeckStore.isStarter(name);
+    if (!confirm(starter ? `Restore the starter deck "${name}" to its original list?` : `Delete deck "${name}"?`)) return;
     const all = MTG.DeckStore.load(); delete all[name]; MTG.DeckStore.save(all);
+    if (starter) return this.loadDeck(name);
     this.deck = { name: 'New Deck', cards: [] }; this.originalName = null;
     this.refreshDeckSelect(); this.renderDeck(); this.renderPool();
   },

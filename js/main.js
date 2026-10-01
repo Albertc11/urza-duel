@@ -181,6 +181,7 @@ $('#menuBtn').onclick = () => {
   MTG.UI.closeModal(); show('#menu'); fillDecks(); refreshResume();
 };
 $('#concedeBtn').onclick = () => MTG.UI.concede();
+$('#sideToggle').onclick = () => $('#game').classList.toggle('side-open');
 $('#copyLogBtn').onclick = () => MTG.UI.copyLog();
 $('#bugBtn').onclick = () => MTG.UI.bugReport();
 // resume the saved local game (replays its moves, then play continues)

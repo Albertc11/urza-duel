@@ -142,6 +142,7 @@ h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; margin: 0 0 .5em; }
 #log { font-size: 12px; color: var(--muted); }
 #log div { padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,.03); }
 #log div.turn { color: var(--gold); margin-top: 6px; font-weight: 600; }
+#sideToggle { display: none; }
 #sideButtons { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 #sideButtons label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 
@@ -200,7 +201,20 @@ h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; margin: 0 0 .5em; }
 @media (max-width: 900px) {
   :root { --cardw: 64px; --cardh: 90px; --handw: 84px; --handh: 118px; }
   #game { grid-template-columns: 1fr; }
+  #game, #board { grid-template-columns: minmax(0, 1fr); }
+  /* the side panel becomes a drawer opened with the ☰ button */
   #side { display: none; }
+  #game.side-open #side { display: flex; position: fixed; top: 0; right: 0; bottom: 0; width: min(320px, 88vw); z-index: 50; box-shadow: -10px 0 30px rgba(0,0,0,.6); }
+  #sideToggle { display: block; position: fixed; top: 6px; right: 6px; z-index: 51; padding: 4px 10px; font-size: 18px; }
+  #preview { min-height: 0; } #preview .pimg { max-width: 180px; }
+  .pbar { gap: 6px; padding: 4px 48px 4px 6px; flex-wrap: wrap; }
+  .pbar.me { padding-right: 6px; }
+  .avatar { padding-right: 8px; } .zones { gap: 4px; }
+  .pile { min-width: 0; padding: 2px 5px; font-size: 10px; } .pile b { font-size: 12px; }
+  .field { flex-direction: column; align-items: stretch; gap: 4px; overflow-y: auto; }
+  .row.lands { flex: 0 0 auto; justify-content: flex-start; border-left: 0; padding-left: 0; border-top: 1px dashed rgba(255,255,255,.08); padding-top: 4px; }
+  .hand { justify-content: flex-start; overflow-x: auto; padding-top: 26px; }
+  .menu-row > * { min-width: 0; } .menu-row input { width: 100%; box-sizing: border-box; }
   #builder { grid-template-columns: 1fr; grid-template-rows: auto 1fr 40%; }
   #deckside { border-left: 0; border-top: 1px solid var(--line); }
   .card .nm { font-size: 8px; } .card .ty { display: none; }

@@ -816,13 +816,31 @@ class AIAgent {
     if (g.c(a).flags.has('noCombatDamage')) return true;
     return g.battlefield.some(o => { const im = o.def.impl || {}; return im.preventDamage && im.preventDamage(g, o, a, t, true); });
   }
+  // how strong a player's position is: creatures and other permanents in play, plus cards in hand (the count is public)
+  strength(g, q) {
+    return g.perms(q).reduce((s, o) => s + (g.is(o, 'Land') ? 0.5 : this.value(g, o)), 0) + g.players[q].hand.length * 0.5;
+  }
   chooseAttackers(g, p, cands) {
-    // focus the lowest-life opponent our creatures can actually hurt; skip attackers whose damage would be prevented
-    const os = g.opps(p).slice().sort((a, b) => g.players[a].life - g.players[b].life);
-    const opp = os.find(q => cands.some(a => !this.blanked(g, a, q))) ?? this.oppOf(p);
+    // in multiplayer, attack the opponent where the attack achieves the most: damage that gets through relative to
+    // their life (lethal first), then lean toward the strongest player; lowest life breaks ties.
+    // Attackers whose damage that opponent would prevent (Energy Field, Fog...) are skipped.
     const must = a => { const im = a.def.impl || {}; return im.mustAttack && im.mustAttack(g, a, []); };
-    const list = this.chooseAttackersAt(g, p, cands.filter(a => must(a) || !this.blanked(g, a, opp)), opp);
-    return new Map(list.map(a => [a, opp]));
+    const opps = g.opps(p);
+    const strengths = new Map(opps.map(q => [q, this.strength(g, q)]));
+    const maxStr = Math.max(1, ...strengths.values());
+    let best = null;
+    for (const q of opps) {
+      if (!cands.some(a => !this.blanked(g, a, q))) continue;
+      const list = this.chooseAttackersAt(g, p, cands.filter(a => must(a) || !this.blanked(g, a, q)), q);
+      const blockers = g.creatures(q).filter(o => !o.tapped);
+      // unblockable-in-practice damage counts in full, damage a blocker could stop counts half
+      const dmg = list.filter(a => !this.blanked(g, a, q)).reduce((s, a) => s + Math.max(0, g.pow(a)) * (blockers.some(b => g.canBlock(b, a)) ? 0.5 : 1), 0);
+      const life = Math.max(1, g.players[q].life);
+      const score = (dmg >= life ? 20 : 0) + 10 * Math.min(1, dmg / life) + (list.length ? 3 * strengths.get(q) / maxStr : 0);
+      if (!best || score > best.score || (score === best.score && life < best.life)) best = { q, list, score, life };
+    }
+    if (!best) { const q = this.oppOf(p); best = { q, list: this.chooseAttackersAt(g, p, cands.filter(must), q) }; }
+    return new Map(best.list.map(a => [a, best.q]));
   }
   chooseAttackersAt(g, p, cands, opp) {
     const oppLife = g.players[opp].life, myLife = g.players[p].life;

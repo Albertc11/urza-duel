@@ -71,6 +71,18 @@ test('Typed targets keep their type when a card adds a filter (Soltari Visionary
   const cands = g.targetCandidates(waste.def.impl.abilities[0].targets[0], { controller: 0, source: waste }, waste);
   assert(!cands.includes(gor) && cands.includes(tower) && cands.every(c => g.is(c, 'Land') && !g.c(c).supertypes.has('Basic')), 'Wasteland targets only nonbasic lands: got ' + cands.map(c => c.def.name));
 });
+test('Multiplayer AI attacks where its attack achieves most, not just the lowest-life opponent', async () => {
+  const pickFor = g => { const m = new M.AIAgent().chooseAttackers(g, 0, g.creatures(0)); return [...new Set(m.values())]; };
+  // lowest-life opponent has a blocker that would eat our attacker for free (the old AI then attacked no one); the other is open
+  let g = setup([{}, {}, {}]); put(g, 0, 'Gorilla Warrior'); g.players[1].life = 10; put(g, 1, 'Thorn Elemental'); g.players[2].life = 20;
+  assert(pickFor(g).join() === '2', 'should attack the open player at 20, got ' + pickFor(g));
+  // lethal beats everything: player 1 at 3 with no blockers, player 2 has a big board
+  g = setup([{}, {}, {}]); put(g, 0, 'Gorilla Warrior'); g.players[1].life = 3; put(g, 2, 'Glorious Anthem'); put(g, 2, 'Opalescence');
+  assert(pickFor(g).join() === '1', 'should finish off the player at 3, got ' + pickFor(g));
+  // same life, both open: lean toward the stronger player
+  g = setup([{}, {}, {}]); put(g, 0, 'Gorilla Warrior'); put(g, 2, 'Glorious Anthem');
+  assert(pickFor(g).join() === '2', 'should attack the player with more on the board, got ' + pickFor(g));
+});
 test('AI Arc Lightning kills a creature instead of spreading 1 damage over three targets', async () => {
   const g = setup(); const ai = new M.AIAgent(); g.players[0].agent = ai;
   lands(g, 0, 'Mountain', 3); hand(g, 0, 'Arc Lightning');

@@ -1,0 +1,14 @@
+{
+  "name": "Urza's Duel",
+  "short_name": "Urza's Duel",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#15110d",
+  "theme_color": "#15110d",
+  "icons": [
+    { "src": "images/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "images/icon-512.jpg", "sizes": "512x512", "type": "image/jpeg" }
+  ]
+}

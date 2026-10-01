@@ -196,6 +196,28 @@ $('#resumeBtn').onclick = () => {
   MTG.UI.start({ players: s.players, seed: s.seed, replay: s.decisions, onExit: () => { show('#menu'); fillDecks(); refreshResume(); } });
 };
 refreshResume();
+// offline play: sw.js keeps the game files; this button also stores every card image (~280 MB)
+if ('serviceWorker' in navigator && 'caches' in window && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  const btn = $('#offlineBtn');
+  const urls = [...new Set(Object.values(window.CARD_IMAGES || {}).flatMap(c => [c.img, c.art]).filter(Boolean))].map(u => new URL(u, location.href).href);
+  const missing = async cache => { const have = new Set((await cache.keys()).map(r => r.url)); return urls.filter(u => !have.has(u)); };
+  caches.open('urza-images').then(missing).then(left => {
+    btn.classList.remove('hidden');
+    if (!left.length) { btn.textContent = 'Cards saved for offline ✓'; btn.disabled = true; }
+  });
+  btn.onclick = async () => {
+    btn.disabled = true;
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    const cache = await caches.open('urza-images');
+    const left = await missing(cache);
+    let done = urls.length - left.length, failed = 0;
+    const work = async () => { for (let u; (u = left.shift());) { try { await cache.add(u); } catch (e) { failed++; } btn.textContent = `Downloading cards… ${Math.floor(++done * 100 / urls.length)}%`; } };
+    await Promise.all(Array.from({ length: 6 }, work));
+    if (failed) { btn.textContent = `Download cards for offline (${failed} failed, tap to retry)`; btn.disabled = false; }
+    else btn.textContent = 'Cards saved for offline ✓';
+  };
+}
 $('#fullControl').onchange = e => { MTG.UI.settings.fullControl = e.target.checked; };
 const supported = Object.values(MTG.DB).filter(d => d.supported).length;
 $('#menuNote').textContent = `${supported} cards playable: the Urza and Tempest blocks plus the extra cards from your spreadsheet decks.`;

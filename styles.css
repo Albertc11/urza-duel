@@ -294,6 +294,16 @@ h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; margin: 0 0 .5em; }
 .opppanel .field { flex: 1; flex-direction: column; align-items: stretch; gap: 4px; }
 .opppanel .field .row.lands { flex: 0 0 auto; justify-content: flex-start; border-left: 0; padding-left: 0; border-top: 1px dashed rgba(255,255,255,.08); padding-top: 4px; }
 .opppanel.out { opacity: .4; filter: grayscale(.7); }
+@media (max-width: 900px) {
+  .opps .opppanel:last-child .pbar { padding-right: 48px; } /* top-right panel: keep its name clear of the ☰ button */
+}
+/* phones in portrait: opponents stack in one column you swipe through; your side of the board stays put */
+@media (max-width: 600px) {
+  .opps.n2, .opps.n3 { grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; overflow-y: auto; }
+  .opps .opppanel { overflow: visible; }
+  .opps .opppanel:last-child .pbar { padding-right: 8px; }
+  .opps .opppanel:first-child .pbar { padding-right: 48px; }
+}
 .card .blk.atk { background: var(--target); }
 .seatrow { display: flex; gap: 6px; align-items: center; }
 .seatrow select, .seatrow input { min-width: 0; flex: 1; }

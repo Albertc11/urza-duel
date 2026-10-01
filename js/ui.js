@@ -745,7 +745,8 @@ const UI = MTG.UI = {
   },
 };
 
-window.addEventListener('resize', () => { if (UI.g) UI.fitFields(); });
+// fit again once the new size has settled (phones rotating can report it in steps)
+window.addEventListener('resize', () => { if (UI.g) { UI.fitFields(); clearTimeout(UI._refit); UI._refit = setTimeout(() => UI.g && UI.fitFields(), 250); } });
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   const p = UI.pending;

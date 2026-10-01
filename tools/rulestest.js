@@ -29,6 +29,19 @@ const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
+test('In multiplayer, an AI only Fogs attacks aimed at itself (not lethal-looking attacks on another player)', async () => {
+  const g = setup([{}, {}, {}]); const ai = new M.AIAgent(); g.players[2].agent = ai;
+  g.players[2].life = 4; put(g, 2, 'Forest'); const fog = hand(g, 2, 'Fog');
+  const atk = [put(g, 0, 'Gorilla Warrior'), put(g, 0, 'Sustainer of the Realm')]; // 3 + 2 power
+  g.step = 'declareBlockers'; g.combat = { attackers: atk, blocks: new Map(), blockerOf: new Map(), dealtFirst: new Set(), blocked: new Set() };
+  atk.forEach(o => { o.attacking = true; o.attackTarget = 1; });
+  const acts = g.legalActions(2);
+  assert(acts.some(a => a.card === fog), 'Fog should be castable here');
+  assert(!ai.combatTrick(g, 2, acts), 'not attacked: should not Fog 5 damage aimed at another player');
+  atk.forEach(o => { o.attackTarget = 2; });
+  const pick = ai.combatTrick(g, 2, g.legalActions(2));
+  assert(pick && pick.card === fog, 'should Fog when the 5 damage is aimed at itself at 4 life');
+});
 test('AI Arc Lightning kills a creature instead of spreading 1 damage over three targets', async () => {
   const g = setup(); const ai = new M.AIAgent(); g.players[0].agent = ai;
   lands(g, 0, 'Mountain', 3); hand(g, 0, 'Arc Lightning');

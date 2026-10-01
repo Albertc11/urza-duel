@@ -461,8 +461,10 @@ class AIAgent {
       for (const b of g.blockersOf(a)) fights.push([a, b]);
     }
     const unblockedDmg = c.attackers.filter(a => g.alive(a) && a.attacking && !g.isBlocked(a)).reduce((s, a) => s + Math.max(0, g.pow(a)), 0);
+    // unblocked damage headed at us; in multiplayer, attacks on another player don't count
+    const incomingDmg = c.attackers.filter(a => g.alive(a) && a.attacking && !g.isBlocked(a) && (a.attackTarget != null ? a.attackTarget : g.opp(g.active)) === p).reduce((s, a) => s + Math.max(0, g.pow(a)), 0);
     // lethal defense: fog, Blessed Reversal
-    if (g.active !== p && unblockedDmg >= g.players[p].life) {
+    if (g.active !== p && incomingDmg >= g.players[p].life) {
       for (const a of acts.filter(a => a.type === 'cast')) {
         const tag = (a.card.def.impl || {}).ai;
         if (tag === 'fog' || tag === 'blessed') return a;
@@ -520,7 +522,7 @@ class AIAgent {
       if (im.ai === 'preventHit' && g.active !== p) {
         const hits = c.attackers.filter(x => g.alive(x) && x.attacking && x.attackTarget === p && !g.isBlocked(x));
         const big = this.best(hits, o => g.pow(o));
-        if (big && (g.pow(big) >= 4 || unblockedDmg >= g.players[p].life)) { this.intent = null; return a; }
+        if (big && (g.pow(big) >= 4 || incomingDmg >= g.players[p].life)) { this.intent = null; return a; }
       }
       if (im.ai === 'removal' && g.active !== p) {
         // kill an attacker

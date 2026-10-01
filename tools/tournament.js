@@ -3,7 +3,7 @@ global.window = global;
 for (const f of ['carddata', 'carddata-extra', 'engine', 'cards', 'cards2', 'cards3', 'ai', 'sheetdecks', 'decks']) require('../js/' + f + '.js');
 const M = window.MTG; M.buildDB();
 const N = +(process.argv[2] || 16);
-const re = new RegExp(process.argv[3] || 'spreadsheet');
+const re = new RegExp(process.argv[3] || '^AC ');
 const names = Object.keys(M.STARTERS).filter(n => re.test(n));
 const score = {}; names.forEach(n => score[n] = { w: 0, l: 0, d: 0, turns: 0, games: 0 });
 const pair = {};

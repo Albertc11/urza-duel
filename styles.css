@@ -213,11 +213,22 @@ h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; margin: 0 0 .5em; }
   .pile { min-width: 0; padding: 2px 5px; font-size: 10px; } .pile b { font-size: 12px; }
   .field { flex-direction: column; align-items: stretch; gap: 4px; overflow-y: auto; }
   .row.lands { flex: 0 0 auto; justify-content: flex-start; border-left: 0; padding-left: 0; border-top: 1px dashed rgba(255,255,255,.08); padding-top: 4px; }
-  .hand { justify-content: flex-start; overflow-x: auto; padding-top: 26px; }
+  .hand { justify-content: flex-start; overflow-x: auto; overflow-y: hidden; padding-top: 26px; min-height: calc(var(--handh) + 40px); box-sizing: border-box; }
   .menu-row > * { min-width: 0; } .menu-row input { width: 100%; box-sizing: border-box; }
   #builder { grid-template-columns: 1fr; grid-template-rows: auto 1fr 40%; }
   #deckside { border-left: 0; border-top: 1px solid var(--line); }
   .card .nm { font-size: 8px; } .card .ty { display: none; }
+}
+
+/* short screens (phones held sideways): let the board scroll instead of squeezing the battlefield */
+@media (max-height: 560px) {
+  #game { overflow-y: auto; }
+  #board, #board.multi { grid-template-rows: none; overflow: visible; }
+  .field { min-height: calc(var(--cardh) + 24px); }
+}
+/* touch screens: a tapped card stays "hovered", so don't lift and enlarge hand cards */
+@media (hover: none) {
+  .hand .card.handcard:hover { transform: none; margin: 0 -10px; }
 }
 
 .card.mini { width: 40px; height: 56px; border-radius: 4px; background-size: cover; border-width: 1px; cursor: pointer; }

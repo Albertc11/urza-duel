@@ -264,9 +264,11 @@ const Net = MTG.Net = {
     const session = this.session, gid = rid();
     const { key, base } = await relayKeys(code);
     const will = await seal(key, { from: gid, bye: true });
-    if (session !== this.session) return;
+    // the direct connection can still open while the relay is being set up; if it did, the relay must not join too
+    const directWon = () => session !== this.session || (this.hostConn && this.hostConn.open && !this.hostConn.relay);
+    if (directWon()) return;
     const tryBroker = i => {
-      if (session !== this.session) return;
+      if (directWon()) return;
       if (i >= BROKERS.length) return this.onStatus('Could not reach the room. Check the code, and that the host still has the room open.');
       const client = relayClient(BROKERS[i], { reconnectPeriod: 0, will: { topic: `${base}/h`, payload: will, qos: 1 } });
       this.relayClients.push(client);
@@ -274,9 +276,11 @@ const Net = MTG.Net = {
       client.on('error', () => { if (!settled) { settled = true; try { client.end(true); } catch (e) {} tryBroker(i + 1); } });
       client.on('connect', () => {
         if (settled) return; settled = true;
+        if (directWon()) { try { client.end(true); } catch (e) {} return; }
         client.options.reconnectPeriod = 3000;
         const conn = new RelayConn(client, key, `${base}/h`, gid);
         client.subscribe([`${base}/g/${gid}`, `${base}/hostbye`], { qos: 1 }, () => {
+          if (directWon()) { try { client.end(true); } catch (e) {} return; }
           this.useHostConn(conn);
           conn.send({ t: 'hello', v: PROTOCOL, name: this.opts.name, deck: this.opts.deck });
           // no answer from the host at all: the room doesn't exist (or the host left)

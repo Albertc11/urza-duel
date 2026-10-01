@@ -804,9 +804,20 @@ class AIAgent {
     }
   }
 
+  // would all combat damage from attacker a to player q be prevented (Energy Field, Fog effects, ...)?
+  blanked(g, a, q) {
+    const t = { player: q };
+    if (g.flags.preventCombat || g.flags['preventCombatFrom' + a.id]) return true;
+    if ((a.def.impl || {}).preventDealt && a.def.impl.preventDealt(g, a, true)) return true;
+    if (g.c(a).flags.has('noCombatDamage')) return true;
+    return g.battlefield.some(o => { const im = o.def.impl || {}; return im.preventDamage && im.preventDamage(g, o, a, t, true); });
+  }
   chooseAttackers(g, p, cands) {
-    const opp = this.oppOf(p);
-    const list = this.chooseAttackersAt(g, p, cands, opp);
+    // focus the lowest-life opponent our creatures can actually hurt; skip attackers whose damage would be prevented
+    const os = g.opps(p).slice().sort((a, b) => g.players[a].life - g.players[b].life);
+    const opp = os.find(q => cands.some(a => !this.blanked(g, a, q))) ?? this.oppOf(p);
+    const must = a => { const im = a.def.impl || {}; return im.mustAttack && im.mustAttack(g, a, []); };
+    const list = this.chooseAttackersAt(g, p, cands.filter(a => must(a) || !this.blanked(g, a, opp)), opp);
     return new Map(list.map(a => [a, opp]));
   }
   chooseAttackersAt(g, p, cands, opp) {

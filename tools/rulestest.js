@@ -16,7 +16,7 @@ class Scripted extends M.AIAgent {
 }
 function setup(scripts = [{}, {}]) {
   const lib = Array(30).fill('Plains');
-  const g = new M.Game({ seed: 7, players: [{ name: 'A', deck: lib, agent: new Scripted(scripts[0]) }, { name: 'B', deck: lib.slice(), agent: new Scripted(scripts[1]) }] });
+  const g = new M.Game({ seed: 7, players: scripts.map((sc, i) => ({ name: 'ABC'[i], deck: lib.slice(), agent: new Scripted(sc) })) });
   g.turn = 3; g.active = 0; g.step = 'main1'; g.players.forEach(p => { p.lastTurnStart = 3; });
   return g;
 }
@@ -395,6 +395,19 @@ test('An attacker that "cannot be blocked by more than one creature" (Charging R
   const blocks = new Map([[b1, [rhino]], [b2, [rhino]]]);
   assert(g.blockError(blocks, [rhino]), 'two blockers on Charging Rhino is illegal');
   assert(!g.blockError(new Map([[b1, [rhino]]]), [rhino]), 'one blocker is fine');
+});
+
+test('AI does not attack a player whose Energy Field prevents all its damage (it picks someone it can hurt)', async () => {
+  const g = setup([{}, {}, {}]);
+  const ai = new M.AIAgent(); ai._g = g;
+  put(g, 1, 'Energy Field'); g.players[1].life = 5; // lowest life, but untouchable
+  const bear = put(g, 0, 'Pegasus Charger');
+  assert(ai.blanked(g, bear, 1), 'Energy Field prevents damage from creatures its controller does not control');
+  const atk = ai.chooseAttackers(g, 0, [bear]);
+  assert(atk.get(bear) !== 1, 'the AI should not swing at the Energy Field player');
+  const g2 = setup(); const ai2 = new M.AIAgent(); ai2._g = g2;
+  put(g2, 1, 'Energy Field'); const b2 = put(g2, 0, 'Pegasus Charger');
+  assert(ai2.chooseAttackers(g2, 0, [b2]).size === 0, 'in a duel against Energy Field, attacking achieves nothing');
 });
 
 (async () => {

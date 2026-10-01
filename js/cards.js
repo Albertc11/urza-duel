@@ -57,7 +57,7 @@ const sacDraw = mana => ({ cost: { mana, sacSelf: true }, text: 'Draw a card', a
 const regenTarget = (g, o) => { if (g.alive(o)) { o.regen++; g.bump(); } };
 const auraStatic = (layer, apply) => (g, o) => o.attachedTo ? [{ layer, affects: (g2, x) => x.id === o.attachedTo, apply }] : [];
 const auraPT = (p, t) => auraStatic('ptmod', ch => { ch.power += p; ch.toughness += t; });
-const auraKW = (...kws) => auraStatic('ability', ch => kws.forEach(k => ch.keywords.add(k)));
+const auraKW = (...kws) => Object.assign(auraStatic('ability', ch => kws.forEach(k => ch.keywords.add(k))), { kws }); // kws: lets the AI skip creatures that already have them
 const auraFlag = flag => auraStatic('ability', ch => ch.flags.add(flag));
 const combine = (...fns) => (g, o) => fns.flatMap(f => f(g, o));
 const addFlag = flag => ch => ch.flags.add(flag);

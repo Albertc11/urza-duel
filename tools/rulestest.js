@@ -94,6 +94,18 @@ test('"You" on an opponent\'s trigger means its controller: Sarcomancy hurts its
   await resolveAll(g);
   assert(g.players[1].life === 19 && g.players[0].life === 20, 'the controller takes the damage, not the other player');
 });
+test('AI doesn\'t put a keyword-only Aura on a creature that already has the keyword (Shimmering Wings on a flyer)', async () => {
+  let g = setup(); let ai = new M.AIAgent(); lands(g, 0, 'Island', 2);
+  put(g, 0, 'Tradewind Rider'); const merfolk = put(g, 0, 'Coral Merfolk'); const wings = hand(g, 0, 'Shimmering Wings');
+  let plan = ai.planCast(g, 0, wings, 'main1');
+  assert(plan && plan.intent[0] === merfolk, 'Wings should go on the creature that can\'t already fly');
+  g = setup(); ai = new M.AIAgent(); lands(g, 0, 'Island', 2); put(g, 0, 'Tradewind Rider');
+  plan = ai.planCast(g, 0, hand(g, 0, 'Shimmering Wings'), 'main1');
+  assert(!plan, 'with only flyers, Shimmering Wings should not be cast');
+  g = setup(); ai = new M.AIAgent(); lands(g, 0, 'Forest', 1); const rider = put(g, 0, 'Tradewind Rider');
+  plan = ai.planCast(g, 0, hand(g, 0, 'Rancor'), 'main1');
+  assert(plan && plan.intent[0] === rider, 'Auras that also give stats (Rancor) are unaffected by the keyword check');
+});
 test('AI Arc Lightning kills a creature instead of spreading 1 damage over three targets', async () => {
   const g = setup(); const ai = new M.AIAgent(); g.players[0].agent = ai;
   lands(g, 0, 'Mountain', 3); hand(g, 0, 'Arc Lightning');

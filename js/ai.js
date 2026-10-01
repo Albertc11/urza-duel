@@ -183,7 +183,9 @@ class AIAgent {
           if (!t || this.value(g, t) < 3) return null;
           return { score: cmcScore + 1, intent: [t] };
         }
-        const mine = cands.filter(o => g.ctrl(o) === p && (spec.prompt !== 'Enchant creature' || g.isCreature(o)));
+        // an Aura that only grants keywords (Shimmering Wings, Reflexes...) does nothing for a creature that already has them
+        const grants = im.statics && im.statics.kws;
+        const mine = cands.filter(o => g.ctrl(o) === p && (spec.prompt !== 'Enchant creature' || g.isCreature(o)) && !(grants && g.isCreature(o) && grants.every(k => g.has(o, k))));
         if (d.enchant === 'creature' && !mine.length) return null;
         const t = this.best(mine, o => this.value(g, o) + (g.sick(o) ? -1 : 0) + (o.tapped ? 0 : 0.5));
         if (!t) return null;

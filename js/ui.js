@@ -146,7 +146,7 @@ const UI = MTG.UI = {
     el.className = mine ? 'mine' : 'theirs';
     el.innerHTML = `<div class="sp-img" style="background-image:url('${def.img || ''}')"></div>
       <div class="sp-body"><div class="sp-title">${title}</div>
-      ${item.kind !== 'spell' ? `<div class="sp-text">${this.linkCards(item.text)}</div>` : ''}
+      ${item.kind !== 'spell' ? `<div class="sp-text">${this.linkCards(g.textFor(item, this.viewer))}</div>` : ''}
       ${tg ? `<div class="sp-target">🎯 ${this.linkCards(tg)}</div>` : ''}
       <div class="sp-lines"></div></div>`;
     el.classList.add('show');
@@ -414,7 +414,7 @@ const UI = MTG.UI = {
       prompt = g.over ? 'Game over' : `<small>${whose} turn ${g.turn} — waiting for ${esc(g.priority != null ? g.pname(g.priority) : 'game')}…</small>`;
     } else if (pend.kind === 'priority') {
       const top = g.stack[g.stack.length - 1];
-      if (top) prompt = `${esc(top.text)} is on the stack. <small>Respond, or pass to let it resolve.</small>`;
+      if (top) prompt = `${esc(g.textFor(top, this.viewer))} is on the stack. <small>Respond, or pass to let it resolve.</small>`;
       else prompt = `${whose} ${MTG.STEP_LABEL[g.step]}. <small>Play a card or ability, or pass.</small>`;
       const passLabel = top ? 'Resolve (Space)' : (g.active === pend.p && g.step === 'main1' ? 'To combat (Space)' : g.active === pend.p && g.step === 'main2' ? 'End turn (Space)' : 'Pass (Space)');
       buttons = `<button class="primary" data-act="pass">${passLabel}</button>`;
@@ -460,7 +460,7 @@ const UI = MTG.UI = {
       const cand = pend && pend.kind === 'choice' && pend.req.type === 'target' && pend.req.candidates.includes(it);
       const def = it.kind === 'spell' ? it.card.def : it.source.def;
       const tg = g.describeTargets(it.ctx);
-      return `<div class="stackitem ${cand ? 'cand' : ''}" data-stack="${it.id}" data-def="${esc(def.name)}"><div class="thumb" style="background-image:url('${def.art || ''}')"></div><div><div>${esc(it.kind === 'spell' ? def.name : it.text)}</div><div class="who">${esc(g.pname(it.controller))}${it.kind !== 'spell' ? ' · ' + esc(def.name) : ''}${esc(tg)}</div></div></div>`;
+      return `<div class="stackitem ${cand ? 'cand' : ''}" data-stack="${it.id}" data-def="${esc(def.name)}"><div class="thumb" style="background-image:url('${def.art || ''}')"></div><div><div>${esc(it.kind === 'spell' ? def.name : g.textFor(it, this.viewer))}</div><div class="who">${esc(g.pname(it.controller))}${it.kind !== 'spell' ? ' · ' + esc(def.name) : ''}${esc(tg)}</div></div></div>`;
     }).join('');
     list.querySelectorAll('.stackitem').forEach(el => {
       el.onmouseenter = () => this.preview(MTG.DB[el.dataset.def]);

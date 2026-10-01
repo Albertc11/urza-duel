@@ -204,6 +204,16 @@ class Game {
   impl(o) { return o.def.impl || {}; }
   objName(o) { return o.def.name; }
   pname(p) { return this.players[p].name; }
+  // an ability's text as `viewer` should read it: card wording says "you"/"your" for the ability's controller,
+  // so for anyone else (and in the shared log, viewer null) name that player instead
+  textFor(item, viewer) {
+    const t = item.text || '';
+    if (item.controller == null || viewer === item.controller) return t;
+    const n = this.pname(item.controller);
+    return t.replace(/\b[Yy]our\b/g, n + "'s")
+      .replace(/\b[Yy]ou (control|lose|discard|sacrifice|pay|get|gain|draw|own)\b/g, (m, v) => `${n} ${v}s`)
+      .replace(/\b[Yy]ou\b/g, n);
+  }
   shuffle(arr) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(this.rand() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } }
   flip() { return this.rand() < 0.5; }
   zoneArr(o) {
@@ -655,7 +665,7 @@ class Game {
     const item = { kind: 'ability', id: this.nextId++, source: pt.src, controller: pt.controller, def: t, ctx,
       text: t.text || (pt.src.def.name + ' trigger') };
     this.pushStack(item);
-    this.say(`${pt.src.def.name}: ${item.text} (trigger)`);
+    this.say(`${pt.src.def.name}: ${this.textFor(item, null)} (trigger)`);
     this.emitTargeted(ctx);
   }
 
@@ -1345,7 +1355,7 @@ class Game {
       if (d.targets && !this.checkTargets(d.targets, ctx, item.source)) { this.say(`${name}: "${item.text}" does nothing (its target is no longer legal).`); return; }
       if (d.iff && !d.iff(this, item.source, ctx.ev)) { this.say(`${name}: "${item.text}" does nothing (its condition is no longer true).`); return; }
       if (d.optional && !(await this.yesno(item.controller, `${name}: ${d.optionalPrompt || item.text}?`, d.ai))) { this.say(`${this.pname(item.controller)} chooses not to (${name}).`); return; }
-      this.say(`${name}: ${item.text} — resolves.`);
+      this.say(`${name}: ${this.textFor(item, null)} — resolves.`);
       this.resolving++;
       try { if (d.resolve) await d.resolve(this, ctx); } finally { this.resolving--; }
     }

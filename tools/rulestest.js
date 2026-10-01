@@ -83,6 +83,17 @@ test('Multiplayer AI attacks where its attack achieves most, not just the lowest
   g = setup([{}, {}, {}]); put(g, 0, 'Gorilla Warrior'); put(g, 2, 'Glorious Anthem');
   assert(pickFor(g).join() === '2', 'should attack the player with more on the board, got ' + pickFor(g));
 });
+test('"You" on an opponent\'s trigger means its controller: Sarcomancy hurts its controller, and others see that player named', async () => {
+  const g = setup(); g.active = 1; g.step = 'upkeep';
+  const sarc = put(g, 1, 'Sarcomancy'); // its Zombie token is not made by put(), so the upkeep trigger fires
+  g.emit('upkeep', { player: 1 }); await g.settle();
+  const item = g.stack[g.stack.length - 1];
+  assert(item && item.source === sarc, 'Sarcomancy upkeep trigger should be on the stack');
+  assert(g.textFor(item, 1) === '1 damage to you', 'its controller reads the card wording');
+  assert(g.textFor(item, 0) === '1 damage to B', 'the other player sees the controller named: got ' + g.textFor(item, 0));
+  await resolveAll(g);
+  assert(g.players[1].life === 19 && g.players[0].life === 20, 'the controller takes the damage, not the other player');
+});
 test('AI Arc Lightning kills a creature instead of spreading 1 damage over three targets', async () => {
   const g = setup(); const ai = new M.AIAgent(); g.players[0].agent = ai;
   lands(g, 0, 'Mountain', 3); hand(g, 0, 'Arc Lightning');

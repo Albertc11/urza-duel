@@ -60,6 +60,17 @@ test('In multiplayer, an attacking AI judges pump / Trumpet Blast lethal against
   pick = ai.combatTrick(g, 0, g.legalActions(0));
   assert(pick && pick.card === blast, 'Trumpet Blast is lethal to the attacked player at 9');
 });
+test('Typed targets keep their type when a card adds a filter (Soltari Visionary can\'t hit lands, Wasteland can\'t hit creatures)', async () => {
+  let g = setup(); const sol = put(g, 0, 'Soltari Visionary'); const sw = put(g, 1, 'Swamp');
+  g.dealDamage(sol, { player: 1 }, 2, true); await resolveAll(g);
+  assert(g.alive(sw), 'no enchantment to destroy: the Swamp must survive');
+  g = setup(); const sol2 = put(g, 0, 'Soltari Visionary'); const sw2 = put(g, 1, 'Swamp'); const anthem = put(g, 1, 'Glorious Anthem');
+  g.dealDamage(sol2, { player: 1 }, 2, true); await resolveAll(g);
+  assert(!g.alive(anthem) && g.alive(sw2), 'the enchantment is destroyed, the Swamp is not');
+  g = setup(); const waste = put(g, 0, 'Wasteland'); const gor = put(g, 1, 'Gorilla Warrior'); const tower = put(g, 1, 'Forbidding Watchtower'); put(g, 1, 'Swamp');
+  const cands = g.targetCandidates(waste.def.impl.abilities[0].targets[0], { controller: 0, source: waste }, waste);
+  assert(!cands.includes(gor) && cands.includes(tower) && cands.every(c => g.is(c, 'Land') && !g.c(c).supertypes.has('Basic')), 'Wasteland targets only nonbasic lands: got ' + cands.map(c => c.def.name));
+});
 test('AI Arc Lightning kills a creature instead of spreading 1 damage over three targets', async () => {
   const g = setup(); const ai = new M.AIAgent(); g.players[0].agent = ai;
   lands(g, 0, 'Mountain', 3); hand(g, 0, 'Arc Lightning');

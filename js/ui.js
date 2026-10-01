@@ -278,7 +278,13 @@ const UI = MTG.UI = {
       let w = base;
       const set = () => { f.style.setProperty('--cardw', w + 'px'); f.style.setProperty('--cardh', Math.round(w * 1.39) + 'px'); };
       set();
-      for (let i = 0; i < 30 && w > 34 && (f.scrollHeight > f.clientHeight + 1 || f.scrollWidth > f.clientWidth + 1); i++) { w = Math.floor(w * 0.92); set(); }
+      // also check each card's drawn box: attacking cards are shifted (and badged) past where scrollHeight sees them
+      const overflows = () => {
+        if (f.scrollHeight > f.clientHeight + 1 || f.scrollWidth > f.clientWidth + 1) return true;
+        const r = f.getBoundingClientRect();
+        return [...f.querySelectorAll('.card, .atknum')].some(c => { const b = c.getBoundingClientRect(); return b.bottom > r.bottom + 1 || b.top < r.top - 1; });
+      };
+      for (let i = 0; i < 30 && w > 34 && overflows(); i++) { w = Math.floor(w * 0.92); set(); }
       f.classList.toggle('compact', w < 70);
     });
   },
@@ -288,12 +294,14 @@ const UI = MTG.UI = {
     const cand = (pend && pend.kind === 'choice' && pend.req.type === 'target' && pend.req.candidates.some(c => c.player === p)) || (attackPick && pend.curTarget !== p);
     const targeted = this.targetedIds().has('p' + p) || (attackPick && pend.curTarget === p);
     const pool = Object.entries(pl.pool).filter(([, v]) => v).map(([k, v]) => `<span class="pip ${k}">${v}</span>`).join('');
+    const lands = g.perms(p, o => g.is(o, 'Land'));
     return `<div class="pbar ${mine ? 'me' : ''}">
       <div class="avatar ${g.active === p ? 'active' : ''} ${g.priority === p ? 'prio' : ''} ${cand ? 'cand' : ''} ${targeted ? 'targeted' : ''}" data-player="${p}">
         <div class="life">${pl.life}</div><div><div class="pname">${esc(pl.name)}</div><div style="font-size:11px;color:var(--muted)">${pl.lost ? 'Out of the game' : this.seatLabel(p)}</div></div>
       </div>
       <div class="mana-pool">${pool ? 'Pool: ' + pool : ''}</div>
       <div class="zones">
+        <div class="pile" title="Untapped lands / all lands">Lands<b>${lands.filter(o => !o.tapped).length}/${lands.length}</b></div>
         <div class="pile" title="Cards in hand">Hand<b>${pl.hand.length}</b></div>
         ${this.apertureHTML(p)}<div class="pile" title="Library">Library<b>${pl.library.length}</b></div>
         <div class="pile ${pl.yawgTurn === g.turn || this.gyActs(p).length ? 'playable-pile' : ''}" data-zone="graveyard" data-owner="${p}" title="${pl.yawgTurn === g.turn ? 'Yawgmoth\'s Will: click to play cards from here' : this.gyActs(p).length ? 'Click to use an ability of a card here' : 'Click to view'}">Graveyard<b>${pl.graveyard.length}</b></div>

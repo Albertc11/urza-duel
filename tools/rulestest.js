@@ -29,6 +29,14 @@ const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
+test('AI Arc Lightning kills a creature instead of spreading 1 damage over three targets', async () => {
+  const g = setup(); const ai = new M.AIAgent(); g.players[0].agent = ai;
+  lands(g, 0, 'Mountain', 3); hand(g, 0, 'Arc Lightning');
+  const garg = put(g, 1, 'Opal Gargoyle'), gor = put(g, 1, 'Gorilla Warrior');
+  const act = ai.pickAction(g, 0); assert(act && act.card && act.card.def.name === 'Arc Lightning', 'AI should cast Arc Lightning');
+  await g.performAction(0, act); await resolveAll(g);
+  assert(!g.alive(garg) || !g.alive(gor), 'at least one 2-toughness creature should die from 3 damage');
+});
 test('Auto-tap uses plain lands before a manland, so the manland can still animate', async () => {
   const g = setup(); const tower = put(g, 0, 'Forbidding Watchtower'); lands(g, 0, 'Plains', 2);
   await g.castSpell(0, hand(g, 0, 'Pegasus Charger'), {}); // {2}{W}: needs all three lands

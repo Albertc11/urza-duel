@@ -674,9 +674,11 @@ class AIAgent {
           for (let i = 0; i < this.intent.length; i++) {
             const want = this.intent[i];
             const hit = req.candidates.find(c => c === want || (want.player != null && c.player === want.player));
-            if (hit) { this.intent.splice(i, 1); return hit; }
+            if (hit) { this.intent.splice(i, 1); this.intentSpec = req.spec; return hit; }
           }
         }
+        // planned targets used up: stop at optional extra slots of the same spell (Arc Lightning's "up to three"), so damage isn't spread thin
+        if (this.intent && !this.intent.length && req.optional && req.spec && req.spec === this.intentSpec) return null;
         return this.pickTarget(g, p, req);
       }
       case 'yesno': {

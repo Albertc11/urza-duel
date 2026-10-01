@@ -376,6 +376,27 @@ test('Online: malformed or hostile data from other players is rejected, legitima
   assert(validChoice({ type: 'target', candidates: [a] }, null) && validChoice({ type: 'mode', options: ['x'] }, null), 'cancel (no answer) is always allowed');
 });
 
+test('Several creatures can block one attacker, and every blocker deals its damage to it (509.1a, 510.1)', async () => {
+  const g = setup([{}, { blockers: (g, req) => new Map(req.candidates.map(b => [b, [req.attackers[0]]])) }]);
+  const wurm = put(g, 0, 'Spined Wurm'); // 5/4
+  const b1 = put(g, 1, 'Albino Troll'), b2 = put(g, 1, 'Pegasus Charger'), b3 = put(g, 1, 'Horned Turtle'); // 3/3, 2/1, 1/4
+  g.combat = { attackers: [wurm], blocks: new Map(), blockerOf: new Map(), dealtFirst: new Set(), blocked: new Set() }; wurm.attacking = true; wurm.attackTarget = 1;
+  await g.declareBlockers();
+  assert(g.blockersOf(wurm).length === 3, 'all three block the Wurm, got ' + g.blockersOf(wurm).length);
+  await g.combatDamageStep(false);
+  assert(wurm.damage === 6, 'the Wurm takes 3 + 2 + 1 = 6 damage, got ' + wurm.damage);
+  await resolveAll(g);
+  assert(!g.battlefield.includes(wurm), 'with 6 damage on 4 toughness it dies');
+  assert(g.players[1].life === 20, 'a blocked attacker without trample deals no damage to the player');
+});
+test('An attacker that "cannot be blocked by more than one creature" (Charging Rhino) rejects a double block', async () => {
+  const g = setup();
+  const rhino = put(g, 0, 'Charging Rhino'); const b1 = put(g, 1, 'Albino Troll'), b2 = put(g, 1, 'Pegasus Charger');
+  const blocks = new Map([[b1, [rhino]], [b2, [rhino]]]);
+  assert(g.blockError(blocks, [rhino]), 'two blockers on Charging Rhino is illegal');
+  assert(!g.blockError(new Map([[b1, [rhino]]]), [rhino]), 'one blocker is fine');
+});
+
 (async () => {
   let pass = 0;
   for (const t of tests) {

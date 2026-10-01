@@ -453,16 +453,17 @@ class AIAgent {
 
   combatTrick(g, p, acts) {
     const c = g.combat; if (!c) return null;
-    const opp = this.oppOf(p);
     // simulate simple fights: pairs attacker-blocker
     const fights = [];
     for (const a of c.attackers) {
       if (!g.alive(a) || !a.attacking) continue;
       for (const b of g.blockersOf(a)) fights.push([a, b]);
     }
-    const unblockedDmg = c.attackers.filter(a => g.alive(a) && a.attacking && !g.isBlocked(a)).reduce((s, a) => s + Math.max(0, g.pow(a)), 0);
-    // unblocked damage headed at us; in multiplayer, attacks on another player don't count
-    const incomingDmg = c.attackers.filter(a => g.alive(a) && a.attacking && !g.isBlocked(a) && (a.attackTarget != null ? a.attackTarget : g.opp(g.active)) === p).reduce((s, a) => s + Math.max(0, g.pow(a)), 0);
+    // unblocked attackers per attacked player: in multiplayer, lethal is judged against each defender separately
+    const unblockedAt = q => c.attackers.filter(a => g.alive(a) && a.attacking && !g.isBlocked(a) && (a.attackTarget != null ? a.attackTarget : g.opp(g.active)) === q);
+    const dmgOf = list => list.reduce((s, a) => s + Math.max(0, g.pow(a)), 0);
+    const defenders = [...new Set(c.attackers.filter(a => g.alive(a) && a.attacking).map(a => a.attackTarget != null ? a.attackTarget : g.opp(g.active)))];
+    const incomingDmg = dmgOf(unblockedAt(p));
     // lethal defense: fog, Blessed Reversal
     if (g.active !== p && incomingDmg >= g.players[p].life) {
       for (const a of acts.filter(a => a.type === 'cast')) {
@@ -489,17 +490,16 @@ class AIAgent {
           }
         }
         // pump an unblocked attacker for lethal
-        if (g.active === p) {
-          const oppLife = g.players[opp].life;
-          if (unblockedDmg < oppLife && unblockedDmg + pp >= oppLife) {
-            const t = c.attackers.find(x => g.alive(x) && x.attacking && !g.isBlocked(x));
+        if (g.active === p) for (const q of defenders) {
+          const hits = unblockedAt(q), dmg = dmgOf(hits), life = g.players[q].life;
+          if (dmg < life && dmg + pp >= life) {
+            const t = hits[0];
             if (t && this.cands(g, p, a.card, im.spell.targets[0]).includes(t) && (im.spell.targets[0].count || 1) === 1) { this.intent = [t]; return a; }
           }
         }
       }
       if (im.ai === 'combatTrick' && g.active === p && a.card.def.name === 'Trumpet Blast') {
-        const n = c.attackers.filter(x => g.alive(x) && x.attacking && !g.isBlocked(x)).length;
-        if (unblockedDmg + 2 * n >= g.players[opp].life) return a;
+        if (defenders.some(q => { const hits = unblockedAt(q); return dmgOf(hits) + 2 * hits.length >= g.players[q].life; })) return a;
       }
       // damage prevention (Anoint, Bandage, Temper): save one of our creatures that would die in this fight
       if (im.ai === 'prevent') {

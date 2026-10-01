@@ -42,6 +42,24 @@ test('In multiplayer, an AI only Fogs attacks aimed at itself (not lethal-lookin
   const pick = ai.combatTrick(g, 2, g.legalActions(2));
   assert(pick && pick.card === fog, 'should Fog when the 5 damage is aimed at itself at 4 life');
 });
+test('In multiplayer, an attacking AI judges pump / Trumpet Blast lethal against the player it attacks', async () => {
+  const combat = (g, atk, to) => { g.step = 'declareBlockers'; g.combat = { attackers: atk, blocks: new Map(), blockerOf: new Map(), dealtFirst: new Set(), blocked: new Set() }; atk.forEach(o => { o.attacking = true; o.attackTarget = to; }); };
+  // player 2 at 5 life is attacked by a 3-power creature; player 1 (the AI's default opponent) is at 20
+  let g = setup([{}, {}, {}]); let ai = new M.AIAgent(); g.players[2].life = 5;
+  put(g, 0, 'Forest'); const fury = hand(g, 0, 'Elvish Fury'); const gor = put(g, 0, 'Gorilla Warrior');
+  combat(g, [gor], 2);
+  let pick = ai.combatTrick(g, 0, g.legalActions(0));
+  assert(pick && pick.card === fury, '+2 makes 5 damage, lethal to the attacked player at 5');
+  combat(g, [gor], 1); // same attack aimed at the player at 20 instead
+  assert(!ai.combatTrick(g, 0, g.legalActions(0)), 'pump is not lethal against the player at 20');
+  // Trumpet Blast: 3 + 2 power, +2 each = 9, lethal to the attacked player at 9
+  g = setup([{}, {}, {}]); ai = new M.AIAgent(); g.players[2].life = 9;
+  lands(g, 0, 'Mountain', 3); const blast = hand(g, 0, 'Trumpet Blast');
+  const atk = [put(g, 0, 'Gorilla Warrior'), put(g, 0, 'Sustainer of the Realm')];
+  combat(g, atk, 2);
+  pick = ai.combatTrick(g, 0, g.legalActions(0));
+  assert(pick && pick.card === blast, 'Trumpet Blast is lethal to the attacked player at 9');
+});
 test('AI Arc Lightning kills a creature instead of spreading 1 damage over three targets', async () => {
   const g = setup(); const ai = new M.AIAgent(); g.players[0].agent = ai;
   lands(g, 0, 'Mountain', 3); hand(g, 0, 'Arc Lightning');

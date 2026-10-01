@@ -12,6 +12,17 @@ ADJUST = {
     'green': {'Thorn Elemental': +1},
     'blue': {'Palinchron': +1, 'Archivist': +1, 'Somnophore': +1, 'Mind Over Matter': +1},
 }
+# decks replaced outright by a requested list (count, name); the sheet is ignored for these
+OVERRIDE = {
+    'white': [(2, 'Replenish'), (4, 'Sustainer of the Realm'), (22, 'Plains'), (2, 'Blessed Reversal'), (2, 'Opal Gargoyle'),
+              (2, 'Planar Collapse'), (4, 'Forbidding Watchtower'), (2, 'Knighthood'), (2, 'Opal Champion'), (2, 'Pacifism'),
+              (4, 'Congregate'), (2, 'Humble'), (2, 'Opal Avenger'), (2, "Serra's Embrace"), (2, 'Worship'), (2, 'False Prophet'),
+              (2, 'Soul Warden')],
+    'black': [(2, 'Terror'), (4, 'Priest of Gix'), (22, 'Swamp'), (2, 'Phyrexian Plaguelord'), (2, "Sleeper's Guile"), (4, 'Dark Ritual'),
+              (2, 'Duress'), (2, 'Phyrexian Negator'), (2, 'Dauthi Jackal'), (2, 'Vampiric Embrace'), (2, 'Subversion'), (2, 'Ostracize'),
+              (2, 'No Mercy'), (2, 'Commander Greven il-Vec'), (2, 'Diabolic Edict'), (2, 'Sorceress Queen'), (2, 'Vampiric Tutor'),
+              (2, 'Order of Yawgmoth')],
+}
 # spreadsheet spellings -> Oracle names
 ALIASES = {
     'pacificism': 'Pacifism',
@@ -22,7 +33,7 @@ ALIASES = {
 
 def known_names():
     names = set()
-    for f in ('carddata.js', 'carddata-extra.js'):
+    for f in ('carddata.js', 'carddata-extra.js', 'carddata-tempest.js'):
         txt = open(os.path.join(ROOT, 'js', f), encoding='utf8').read()
         names.update(re.findall(r'"name":"((?:[^"\\]|\\.)*)"', txt))
     return {n.lower(): n for n in names}
@@ -32,6 +43,17 @@ def main():
     wb = openpyxl.load_workbook(os.path.join(ROOT, 'magic.xlsx'), data_only=True)
     decks, notes = {}, []
     for ws in wb.worksheets:
+        title = ws.title.lower()
+        if title in OVERRIDE:
+            for n, name in OVERRIDE[title]:
+                if name.lower() not in names:
+                    sys.exit(f'{ws.title}: unknown card "{name}" in OVERRIDE')
+            cards = [names[name.lower()] for n, name in OVERRIDE[title] for _ in range(n)]
+            if len(cards) != 60:
+                sys.exit(f'{ws.title}: OVERRIDE has {len(cards)} cards, not 60')
+            notes.append(f'{ws.title}: replaced by the requested list')
+            decks[f'AC {title}'] = cards
+            continue
         counts, uncounted = {}, []
         for row in ws.iter_rows(values_only=True):
             raw = row[0]

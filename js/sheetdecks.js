@@ -154,12 +154,11 @@ window.MTG.SHEET_DECKS = {
 "Plains",
 "Plains",
 "Plains",
-"Iron Will",
-"Iron Will",
 "Blessed Reversal",
 "Blessed Reversal",
 "Opal Gargoyle",
 "Opal Gargoyle",
+"Planar Collapse",
 "Planar Collapse",
 "Forbidding Watchtower",
 "Forbidding Watchtower",
@@ -167,8 +166,6 @@ window.MTG.SHEET_DECKS = {
 "Forbidding Watchtower",
 "Knighthood",
 "Knighthood",
-"Opal Champion",
-"Opal Champion",
 "Opal Champion",
 "Opal Champion",
 "Pacifism",
@@ -184,8 +181,11 @@ window.MTG.SHEET_DECKS = {
 "Serra's Embrace",
 "Serra's Embrace",
 "Worship",
+"Worship",
 "False Prophet",
-"False Prophet"
+"False Prophet",
+"Soul Warden",
+"Soul Warden"
 ],
 "AC red": [
 "Mountain",
@@ -278,8 +278,6 @@ window.MTG.SHEET_DECKS = {
 "Swamp",
 "Swamp",
 "Swamp",
-"Swamp",
-"Phyrexian Plaguelord",
 "Phyrexian Plaguelord",
 "Phyrexian Plaguelord",
 "Sleeper's Guile",
@@ -290,7 +288,6 @@ window.MTG.SHEET_DECKS = {
 "Dark Ritual",
 "Duress",
 "Duress",
-"Phyrexian Negator",
 "Phyrexian Negator",
 "Phyrexian Negator",
 "Dauthi Jackal",
@@ -302,6 +299,7 @@ window.MTG.SHEET_DECKS = {
 "Ostracize",
 "Ostracize",
 "No Mercy",
+"No Mercy",
 "Commander Greven il-Vec",
 "Commander Greven il-Vec",
 "Diabolic Edict",
@@ -309,7 +307,9 @@ window.MTG.SHEET_DECKS = {
 "Sorceress Queen",
 "Sorceress Queen",
 "Vampiric Tutor",
-"Vampiric Tutor"
+"Vampiric Tutor",
+"Order of Yawgmoth",
+"Order of Yawgmoth"
 ]
 };
-window.MTG.SHEET_NOTES = ["blue: added 2 Energy Field (no count in sheet)", "blue: added 2 Turnabout (no count in sheet)", "blue: +1 Palinchron (requested change)", "blue: +1 Archivist (requested change)", "blue: +1 Somnophore (requested change)", "blue: +1 Mind Over Matter (requested change)", "blue: added 1 Island to make 60 (23 Island total)", "green: added 2 Eladamri, Lord of Leaves (no count in sheet)", "green: +1 Thorn Elemental (requested change)", "green: added 6 Forest to make 60 (25 Forest total)", "white: added 2 False Prophet (no count in sheet)", "white: added 6 Plains to make 60 (22 Plains total)", "red: Shock capped at 4 (sheet had 5)", "red: added 1 Mountain to make 60 (24 Mountain total)", "black: added 2 Commander Greven il-Vec (no count in sheet)", "black: added 2 Diabolic Edict (no count in sheet)", "black: added 2 Sorceress Queen (no count in sheet)", "black: added 2 Vampiric Tutor (no count in sheet)", "black: removed 2 Swamp to make 60 (23 Swamp total)"];
+window.MTG.SHEET_NOTES = ["blue: added 2 Energy Field (no count in sheet)", "blue: added 2 Turnabout (no count in sheet)", "blue: +1 Palinchron (requested change)", "blue: +1 Archivist (requested change)", "blue: +1 Somnophore (requested change)", "blue: +1 Mind Over Matter (requested change)", "blue: added 1 Island to make 60 (23 Island total)", "green: added 2 Eladamri, Lord of Leaves (no count in sheet)", "green: +1 Thorn Elemental (requested change)", "green: added 6 Forest to make 60 (25 Forest total)", "white: replaced by the requested list", "red: Shock capped at 4 (sheet had 5)", "red: added 1 Mountain to make 60 (24 Mountain total)", "black: replaced by the requested list"];

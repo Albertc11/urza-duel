@@ -54,9 +54,10 @@ MTG.FORMATS = {
 };
 MTG.getFormat = () => { try { const f = localStorage.getItem('urza-format'); if (MTG.FORMATS[f]) return f; } catch (e) {} return 'urza'; };
 MTG.setFormat = f => { try { localStorage.setItem('urza-format', f); } catch (e) {} };
+const SHEET_CARDS = new Set(Object.values(MTG.SHEET_DECKS || {}).flat());
 MTG.inFormat = (name, fmt) => {
   const sets = MTG.FORMATS[fmt || MTG.getFormat()].sets;
-  return (MTG.PRINTS[name] || []).some(p => p.extra || sets.includes(p.set)) || !!(MTG.DB[name] && MTG.DB[name].supertypes.includes('Basic'));
+  return SHEET_CARDS.has(name) || (MTG.PRINTS[name] || []).some(p => p.extra || sets.includes(p.set)) || !!(MTG.DB[name] && MTG.DB[name].supertypes.includes('Basic'));
 };
 
 // Random playable deck from supported cards of the given colors (used for the AI's "random" choice and for tests).

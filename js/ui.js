@@ -442,6 +442,19 @@ const UI = MTG.UI = {
   renderStack() {
     const g = this.g, pend = this.pending;
     const list = $('#stackList');
+    // small screens keep the stack in the ☰ drawer: open it while a spell/ability on the stack can be targeted
+    const stackTarget = !!(pend && pend.kind === 'choice' && pend.req.type === 'target' && g.stack.some(it => pend.req.candidates.includes(it)));
+    const game = $('#game');
+    if (stackTarget) {
+      // once per prompt, so closing the drawer by hand (e.g. to Cancel) sticks
+      if (this._stackDrawerFor !== pend) {
+        this._stackDrawerFor = pend;
+        if (!game.classList.contains('side-open') && getComputedStyle($('#side')).display === 'none') { game.classList.add('side-open'); this._stackDrawer = true; }
+      }
+    } else {
+      this._stackDrawerFor = null;
+      if (this._stackDrawer) { game.classList.remove('side-open'); this._stackDrawer = false; }
+    }
     if (!g.stack.length) { list.innerHTML = '<div class="menu-note" style="text-align:left;margin:0">Empty</div>'; return; }
     list.innerHTML = g.stack.slice().reverse().map(it => {
       const cand = pend && pend.kind === 'choice' && pend.req.type === 'target' && pend.req.candidates.includes(it);

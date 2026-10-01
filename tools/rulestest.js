@@ -29,6 +29,14 @@ const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
+test('Auto-tap uses plain lands before a manland, so the manland can still animate', async () => {
+  const g = setup(); const tower = put(g, 0, 'Forbidding Watchtower'); lands(g, 0, 'Plains', 2);
+  await g.castSpell(0, hand(g, 0, 'Pegasus Charger'), {}); // {2}{W}: needs all three lands
+  assert(tower.tapped, 'Watchtower must tap when every land is needed');
+  const g2 = setup(); const tower2 = put(g2, 0, 'Forbidding Watchtower'); lands(g2, 0, 'Plains', 3);
+  await g2.castSpell(0, hand(g2, 0, 'Pegasus Charger'), {});
+  assert(!tower2.tapped, 'Watchtower should stay untapped when the Plains can pay');
+});
 test('Rune of Protection prevents only the next damage from the chosen source', async () => {
   const g = setup([{ target: (g, req) => req.reason === 'source' ? req.candidates.find(c => c.def && c.def.name === 'Shivan Raptor') : undefined }, {}]);
   lands(g, 0, 'Plains', 2); const rune = put(g, 0, 'Rune of Protection: Red'); const raptor = put(g, 1, 'Shivan Raptor');

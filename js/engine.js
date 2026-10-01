@@ -789,11 +789,12 @@ class Game {
         if (!ab.auto) continue;
         if (!this.canActivate(p, o, ab, true)) continue;
         const opts = ab.options(this, o);
-        if (opts.length) out.push({ obj: o, ab, options: opts, creature: this.isCreature(o) });
+        if (opts.length) out.push({ obj: o, ab, options: opts, creature: this.isCreature(o), hasAbilities: this.activatedAbilities(o).length > 0 });
       }
     }
-    // prefer lands that make one color, then multi, creatures last
-    out.sort((a, b) => (a.creature - b.creature) || (a.options.length - b.options.length));
+    // prefer lands that make one color, then multi, creatures last; within those, keep
+    // permanents with non-mana abilities (Forbidding Watchtower, Treetop Village...) untapped
+    out.sort((a, b) => (a.creature - b.creature) || (a.hasAbilities - b.hasAbilities) || (a.options.length - b.options.length));
     return out;
   }
   // Finds a set of source activations that (with the pool) pays cost. Returns plan array or null.

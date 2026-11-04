@@ -60,16 +60,14 @@ window.MTG.SHEET_DECKS = {
 "Somnophore",
 "Energy Field",
 "Energy Field",
-"Turnabout",
-"Turnabout"
+"Morphling",
+"Morphling"
 ],
 "AC green": [
 "Defense of the Heart",
 "Defense of the Heart",
 "Beast of Burden",
 "Beast of Burden",
-"Forest",
-"Forest",
 "Forest",
 "Forest",
 "Forest",
@@ -123,7 +121,9 @@ window.MTG.SHEET_DECKS = {
 "Thran Golem",
 "Thran Golem",
 "Eladamri, Lord of Leaves",
-"Eladamri, Lord of Leaves"
+"Eladamri, Lord of Leaves",
+"Gaea's Cradle",
+"Gaea's Cradle"
 ],
 "AC white": [
 "Replenish",
@@ -224,8 +224,6 @@ window.MTG.SHEET_DECKS = {
 "Sonic Burst",
 "Viashino Cutthroat",
 "Viashino Cutthroat",
-"Wildfire",
-"Wildfire",
 "Repercussion",
 "Repercussion",
 "Granite Grip",
@@ -247,7 +245,9 @@ window.MTG.SHEET_DECKS = {
 "Thundering Giant",
 "Lightning Blast",
 "Lightning Blast",
-"Wake of Destruction"
+"Wake of Destruction",
+"Avalanche Riders",
+"Avalanche Riders"
 ],
 "AC black": [
 "Terror",
@@ -306,10 +306,10 @@ window.MTG.SHEET_DECKS = {
 "Diabolic Edict",
 "Sorceress Queen",
 "Sorceress Queen",
-"Vampiric Tutor",
-"Vampiric Tutor",
+"Bone Shredder",
+"Bone Shredder",
 "Order of Yawgmoth",
 "Order of Yawgmoth"
 ]
 };
-window.MTG.SHEET_NOTES = ["blue: added 2 Energy Field (no count in sheet)", "blue: added 2 Turnabout (no count in sheet)", "blue: +1 Palinchron (requested change)", "blue: +1 Archivist (requested change)", "blue: +1 Somnophore (requested change)", "blue: +1 Mind Over Matter (requested change)", "blue: added 1 Island to make 60 (23 Island total)", "green: added 2 Eladamri, Lord of Leaves (no count in sheet)", "green: +1 Thorn Elemental (requested change)", "green: added 6 Forest to make 60 (25 Forest total)", "white: replaced by the requested list", "red: Shock capped at 4 (sheet had 5)", "red: added 1 Mountain to make 60 (24 Mountain total)", "black: replaced by the requested list"];
+window.MTG.SHEET_NOTES = ["blue: added 2 Energy Field (no count in sheet)", "blue: added 2 Turnabout (no count in sheet)", "blue: +1 Palinchron (requested change)", "blue: +1 Archivist (requested change)", "blue: +1 Somnophore (requested change)", "blue: +1 Mind Over Matter (requested change)", "blue: -2 Turnabout (requested change)", "blue: +2 Morphling (requested change)", "blue: added 1 Island to make 60 (23 Island total)", "green: added 2 Eladamri, Lord of Leaves (no count in sheet)", "green: +1 Thorn Elemental (requested change)", "green: +2 Gaea's Cradle (requested change)", "green: added 4 Forest to make 60 (23 Forest total)", "white: replaced by the requested list", "red: -2 Wildfire (requested change)", "red: +2 Avalanche Riders (requested change)", "red: Shock capped at 4 (sheet had 5)", "red: added 1 Mountain to make 60 (24 Mountain total)", "black: replaced by the requested list"];

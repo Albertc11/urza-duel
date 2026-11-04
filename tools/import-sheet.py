@@ -9,8 +9,9 @@ ROOT = os.path.join(os.path.dirname(__file__), '..')
 BASIC = {'blue': 'Island', 'green': 'Forest', 'white': 'Plains', 'red': 'Mountain', 'black': 'Swamp'}
 # changes requested on top of the spreadsheet (the basic land count is rebalanced to 60 afterwards)
 ADJUST = {
-    'green': {'Thorn Elemental': +1},
-    'blue': {'Palinchron': +1, 'Archivist': +1, 'Somnophore': +1, 'Mind Over Matter': +1},
+    'green': {'Thorn Elemental': +1, "Gaea's Cradle": +2},
+    'blue': {'Palinchron': +1, 'Archivist': +1, 'Somnophore': +1, 'Mind Over Matter': +1, 'Turnabout': -2, 'Morphling': +2},
+    'red': {'Wildfire': -2, 'Avalanche Riders': +2},
 }
 # decks replaced outright by a requested list (count, name); the sheet is ignored for these
 OVERRIDE = {
@@ -20,7 +21,7 @@ OVERRIDE = {
               (2, 'Soul Warden')],
     'black': [(2, 'Terror'), (4, 'Priest of Gix'), (22, 'Swamp'), (2, 'Phyrexian Plaguelord'), (2, "Sleeper's Guile"), (4, 'Dark Ritual'),
               (2, 'Duress'), (2, 'Phyrexian Negator'), (2, 'Dauthi Jackal'), (2, 'Vampiric Embrace'), (2, 'Subversion'), (2, 'Ostracize'),
-              (2, 'No Mercy'), (2, 'Commander Greven il-Vec'), (2, 'Diabolic Edict'), (2, 'Sorceress Queen'), (2, 'Vampiric Tutor'),
+              (2, 'No Mercy'), (2, 'Commander Greven il-Vec'), (2, 'Diabolic Edict'), (2, 'Sorceress Queen'), (2, 'Bone Shredder'),
               (2, 'Order of Yawgmoth')],
 }
 # spreadsheet spellings -> Oracle names

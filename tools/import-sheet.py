@@ -16,7 +16,7 @@ ADJUST = {
 # decks replaced outright by a requested list (count, name); the sheet is ignored for these
 OVERRIDE = {
     'white': [(2, 'Replenish'), (4, 'Sustainer of the Realm'), (22, 'Plains'), (2, 'Blessed Reversal'), (2, 'Opal Gargoyle'),
-              (2, 'Planar Collapse'), (4, 'Forbidding Watchtower'), (2, 'Knighthood'), (2, 'Opal Champion'), (2, 'Pacifism'),
+              (2, 'Planar Collapse'), (4, 'Forbidding Watchtower'), (2, 'Glorious Anthem'), (2, 'Opal Champion'), (2, 'Pacifism'),
               (4, 'Congregate'), (2, 'Humble'), (2, 'Opal Avenger'), (2, "Serra's Embrace"), (2, 'Worship'), (2, 'False Prophet'),
               (2, 'Soul Warden')],
     'black': [(2, 'Terror'), (4, 'Priest of Gix'), (22, 'Swamp'), (2, 'Phyrexian Plaguelord'), (2, "Sleeper's Guile"), (4, 'Dark Ritual'),

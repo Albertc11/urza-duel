@@ -1052,7 +1052,7 @@ class Game {
     const f = {
       creature: (g, o) => g.isCreature(o), land: (g, o) => g.is(o, 'Land'), permanent: () => true,
       enchantment: (g, o) => g.is(o, 'Enchantment'), Swamp: (g, o) => g.c(o).subtypes.has('Swamp'),
-    }[e] || (() => true);
+    }[e.replace(/ you control$/, '')] || (() => true); // "creature you control": the card's auraFilter checks control
     return { kind: 'permanent', filter: (g, o, ctx) => f(g, o) && (!im.auraFilter || im.auraFilter(g, o, ctx)), prompt: 'Enchant ' + e, harm };
   }
   // legality for a permanent to stay attached (303.4d / protection)

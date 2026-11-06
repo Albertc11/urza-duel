@@ -486,7 +486,8 @@ const UI = MTG.UI = {
     let extra = '';
     if (o && g && o.zone === 'battlefield') {
       const ch = g.c(o);
-      extra = `\n<b>Now:</b> ${ch.power != null ? ch.power + '/' + ch.toughness + ' ' : ''}${[...ch.keywords].join(', ')}${ch.prot.size ? ' pro ' + [...ch.prot].map(x => MTG.COLOR_NAME[x] || x).join('/') : ''}${o.damage ? ' · ' + o.damage + ' damage' : ''}${g.ctrl(o) !== o.owner ? ' · owned by ' + g.pname(o.owner) : ''}`;
+      const now = `${ch.power != null ? ch.power + '/' + ch.toughness + ' ' : ''}${[...ch.keywords].join(', ')}${ch.prot.size ? ' pro ' + [...ch.prot].map(x => MTG.COLOR_NAME[x] || x).join('/') : ''}${o.damage ? ' · ' + o.damage + ' damage' : ''}${g.ctrl(o) !== o.owner ? ' · owned by ' + g.pname(o.owner) : ''}`;
+      if (now.trim()) extra = `\n<b>Now:</b> ${now}`;
     }
     el.querySelector('.pimg').style.backgroundImage = def.img ? `url('${def.img}')` : 'none';
     el.querySelector('.ptext').innerHTML = `<b>${esc(def.name)}</b> ${manaHTML(def.cost)}\n${esc(def.typeLine)}\n${esc(def.text)}${def.power != null ? '\n' + def.power + '/' + def.toughness : ''}${def.supported ? '' : '\n<span style="color:#f08a7a">Not implemented yet</span>'}${extra}`;

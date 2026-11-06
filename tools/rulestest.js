@@ -29,6 +29,15 @@ const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
+test('Dizzying Gaze ("Enchant creature you control") can only target a creature its caster controls, never an enchantment', async () => {
+  const g = setup();
+  const furnace = put(g, 0, 'Furnace of Rath'), mine = put(g, 0, 'Gorilla Warrior'), theirs = put(g, 1, 'Gorilla Warrior');
+  const gaze = hand(g, 0, 'Dizzying Gaze');
+  const t = g.auraTargets(0, gaze);
+  assert(t.length === 1 && t[0] === mine, 'only own creature is legal, got: ' + t.map(o => o.def.name + '/' + o.controller).join(', '));
+  assert(!t.includes(furnace) && !t.includes(theirs), 'enchantment / opponent creature must not be legal');
+});
+
 test('In multiplayer, an AI only Fogs attacks aimed at itself (not lethal-looking attacks on another player)', async () => {
   const g = setup([{}, {}, {}]); const ai = new M.AIAgent(); g.players[2].agent = ai;
   g.players[2].life = 4; put(g, 2, 'Forest'); const fog = hand(g, 2, 'Fog');
